@@ -47,8 +47,8 @@ This document resolves the technical unknowns from the plan's Technical Context.
 2. Residuals are quantized with a quantization step derived from the absolute error bound (step ≤ bound), and entropy-coded.
 3. **Verify-and-repair pass (mandatory)**: after encoding, the encoder reconstructs exactly as a decoder would, computes per-element error, and any element whose reconstructed error exceeds the bound is repaired by escalating to a stricter mode for that element (finer quantum → exact/inflation-code correction). Because the repair is deterministic and re-verified to convergence, the bound **cannot** ship violated.
 
-**Rationale**: FR-003/FR-016 make the bound a hard invariant. A verify-and-repair loop is the only way to *guarantee* the bound in the presence of a lossy entropy coder (which must itself be bit-exact), quantization interaction effects (e.g., predictor drift over long horizons), and JPEG AI-style latent transformations. The adaptive-precision escalation satisfies FR-016's "adaptively increasing precision" while the default fine quantization maximizes CR per the user's directive.
-- A zero bound is valid (FR-008/FR-017): step ≤ 0 is interpreted as the tightest available representation (may still be lossy if the value cannot be represented exactly, consistent with the clarification).
+**Rationale**: FR-003/FR-016 make the bound a hard invariant for any bound > 0; bound = 0 is explicitly exempted from FR-003 (FR-017) and may be lossy, so the verify-and-repair loop skips verification and takes the tightest available quantization when the bound is 0. A verify-and-repair loop is the only way to *guarantee* the bound in the presence of a lossy entropy coder (which must itself be bit-exact), quantization interaction effects (e.g., predictor drift over long horizons), and JPEG AI-style latent transformations. The adaptive-precision escalation satisfies FR-016's "adaptively increasing precision" while the default fine quantization maximizes CR per the user's directive.
+- A zero bound is valid (FR-008/FR-017): verification is skipped (exempted from FR-003) and the tightest available representation is used.
 
 **Alternatives considered**:
 - Trust-the-model (no verification) — rejected: cannot guarantee FR-003.
@@ -59,7 +59,7 @@ This document resolves the technical unknowns from the plan's Technical Context.
 
 **Decision**: v1 uses a compact space-time transformer (attention over spatial patches and time steps) used as a **predictor** (not an end-to-end autoencoder): it predicts values/residuals from neighboring valid data. JPEG AI-inspired elements: learned latent transform, attention/transformer blocks, context modeling for entropy coding. The model is bundled per-package (deterministic, versioned weights, cached/downloaded on demand or shipped small).
 
-**Rationale**: FR-005 mandates a transformer core; the JPEG AI/attention techniques (FR-018) are permitted to maximize CR. A predictor+quantize+verify architecture makes the hard bound directly enforceable — unlike a pure autoencoder whose reconstruction error is only statistically controlled. Bundled/versioned weights keep `get_config` JSON-only while remaining deterministic across encode/decode.
+**Rationale**: FR-005 mandates a transformer core; per the analysis remediation (F2), its enforcement is completed by User Story 4 — earlier stories may use simpler placeholder predictors. The JPEG AI/attention techniques (FR-018) are permitted to maximize CR. A predictor+quantize+verify architecture makes the hard bound directly enforceable — unlike a pure autoencoder whose reconstruction error is only statistically controlled. Bundled/versioned weights keep `get_config` JSON-only while remaining deterministic across encode/decode.
 
 **Alternatives considered**:
 - End-to-end learned autoencoder (pure JPEG AI approach) — rejected for v1: error bound only statistical, violating FR-003 by design; revisit later.

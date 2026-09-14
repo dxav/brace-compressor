@@ -6,7 +6,7 @@
 
 ## Summary
 
-Build a Python library exposing a `numcodecs.Codec`-compatible compressor for the HOAPS water vapor (wvpa) variable. The codec exploits both spatial and temporal structure with a transformer-based model (optionally using JPEG AI-style learned compression techniques and attention mechanisms) and guarantees a hard, user-specified absolute error bound: every reconstructed value differs from the original by at most the bound. Missing values are preserved exactly via a compact, losslessly stored bitmask. The error bound is never violated; precision is adaptively increased where the data is hard to approximate, and the design maximizes compression ratio at any given bound. A zero bound is accepted as the tightest allowed bound (may still be lossy if the underlying quanta cannot represent values exactly).
+Build a Python library exposing a `numcodecs.Codec`-compatible compressor for the HOAPS water vapor (wvpa) variable. The codec exploits both spatial and temporal structure with a transformer-based model (optionally using JPEG AI-style learned compression techniques and attention mechanisms) and guarantees a hard, user-specified absolute error bound: every reconstructed value differs from the original by at most the bound, except at bound zero where the guarantee is explicitly exempted (bound 0 = tightest allowed bound, may still be lossy). Missing values are preserved exactly via a compact, losslessly stored bitmask. The error bound is never violated (for bound > 0); precision is adaptively increased where the data is hard to approximate, and the design maximizes compression ratio at any given bound. The transformer model is introduced in User Story 4; earlier stories may use simpler placeholder predictors.
 
 ## Technical Context
 
@@ -22,7 +22,7 @@ Build a Python library exposing a `numcodecs.Codec`-compatible compressor for th
 
 **Performance Goals**: Compression and decompression of a monthly HOAPS wvpa gridded time series (≈ 360 × 180 × N time steps, float32 ≈ 1–50 MB) completes in minutes on a single machine (offline batch acceptable); compression ratio ≥ 2× (≥ 50% smaller) at a reasonable error bound (SC-003), and ≥ spatial-only baseline at any given bound (SC-007).
 
-**Constraints**: Hard absolute error bound never violated on any value (FR-003/FR-016); missing-value mask preserved bit-exactly (FR-004/FR-015); codec parameters JSON-serializable per `numcodecs.Codec.get_config()`; single-machine, offline; no real-time requirement.
+**Constraints**: Hard absolute error bound never violated on any value (FR-003/FR-016), except when the bound is zero — bound=0 is explicitly exempted from the FR-003 guarantee (FR-017) and may be lossy; missing-value mask preserved bit-exactly (FR-004/FR-015); codec parameters JSON-serializable per `numcodecs.Codec.get_config()`; single-machine, offline; no real-time requirement.
 
 **Scale/Scope**: Single variable (HOAPS wvpa) compression; gridded space-time fields; v1 scope excludes CLI, real-time/streaming, and distributed processing.
 
@@ -54,7 +54,7 @@ specs/001-hoaps-wvpa-compressor/
 src/hoaps_compressor/
 ├── __init__.py
 ├── codec.py             # HoapsWvpaCodec(numcodecs.abc.Codec): encode/decode/get_config/from_config/codec_id
-├── container.py         # Encoded byte-container read/write: header, bitmask, quanta payloads, metadata
+├── container.py         # Encoded byte-container read/write: header, bitmask, residual payloads, metadata
 ├── mask.py              # Missing-value mask extraction, compact bitpacking, restoration
 ├── bound.py             # Error-bound validation (reject negative/non-finite; zero = tightest bound)
 ├── model/

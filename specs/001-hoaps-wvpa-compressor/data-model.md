@@ -35,7 +35,7 @@ The decoded/encoded domain object viewed as a buffer.
 | `values` | `np.ndarray(shape, dtype=float32)` | Gridded wvpa values; missing positions hold `missing_value` sentinel. |
 | `shape` | `tuple` | Must equal codec config `shape`. |
 
-**Rules**: input arrays MUST be C-contiguous, float32 (bit-cast view accepted for other float32-buffers of correct byte length), and of exactly `prod(shape)` elements. Reconstruction guarantees: for valid (non-missing) positions, `|recon − orig| ≤ error_bound` (SC-001); for missing positions, sentinel value restored bit-exactly (SC-002).
+**Rules**: input arrays MUST be C-contiguous, float32 (bit-cast view accepted for other float32-buffers of correct byte length), and of exactly `prod(shape)` elements — fully empty (zero-element) grids are out of scope. Reconstruction guarantees: for valid (non-missing) positions, `|recon − orig| ≤ error_bound` when bound > 0 (SC-001; bound=0 exempt per FR-003); for missing positions, sentinel value restored bit-exactly (SC-002).
 
 ### 3. MissingMask
 
@@ -111,7 +111,8 @@ stateDiagram-v2
     Constructing --> Invalid: negative/non-finite bound, bad shape/dtype → ValueError
     Ready --> Encoding: encode(buf)
     Encoding --> Verifying: predict → quantize → entropy-code
-    Verifying --> Repairing: any |error| > bound
+    Verifying --> Repairing: any |error| > bound (bound > 0)
+    Verifying --> EncodedOK: bound == 0 (FR-003 exempt)
     Repairing --> Verifying: escalate precision for offending elements
     Verifying --> EncodedOK: zero violations
     EncodedOK --> [*]: return EncodedStream

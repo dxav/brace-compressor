@@ -49,7 +49,7 @@ codec = numcodecs.registry.get_codec({"id": "hoaps-wvpa", "shape": (12, 180, 360
 ### `encode(buf) -> bytes`
 
 - **Input**: buffer-like of `4·prod(shape)` bytes, C-contiguous, interpreted as float32 grid with the configured `shape`; missing elements equal to `missing_value` (or NaN when `missing_value="nan"`).
-- **Behavior**: extract mask → predict valid values (space-time transformer) → quantize residuals (step ≤ `error_bound`) → entropy-code (bit-exact) → verify-and-repair until no reconstructed value deviates by more than `error_bound` → frame container with bitpacked mask, coded residuals, metadata, checksum.
+- **Behavior**: extract mask → predict valid values (space-time transformer) → quantize residuals (step ≤ `error_bound`) → entropy-code (bit-exact) → verify-and-repair until no reconstructed value deviates by more than `error_bound` (skipped when bound = 0, exempt per FR-003) → frame container with bitpacked mask, coded residuals, metadata, checksum.
 - **Output**: `bytes` container (self-describing; see §3).
 - **Errors**: `ValueError` on wrong buffer size/content; codec never returns a stream that violates the bound (verified internally before return).
 
@@ -58,7 +58,7 @@ codec = numcodecs.registry.get_codec({"id": "hoaps-wvpa", "shape": (12, 180, 360
 - **Input**: container bytes from `encode` (or a byte-compatible stream of the same major container version and model version).
 - **`out` semantics** (numcodecs contract): if provided, must be a writeable buffer of exactly `4·prod(shape)` bytes; decoded values are written into it and it is returned. If `None`, a fresh NumPy array (shape `shape`, dtype float32) is returned.
 - **Behavior**: validate header/checksum → restore mask bit-exactly → entropy-decode residuals → inverse-quantize with recorded step → predict where required (same model/weights) → write sentinel into missing positions.
-- **Guarantees**: for every valid position, `|decoded − original| ≤ error_bound` (SC-001); missing positions identical to original sentinel (SC-002).
+- **Guarantees**: for every valid position, `|decoded − original| ≤ error_bound` (SC-001) when `error_bound > 0`; at `error_bound = 0` the guarantee is exempted (FR-003 exception — output may be lossy). Missing positions identical to original sentinel (SC-002).
 - **Errors**: `ValueError` on bad magic/checksum/version, shape/model mismatch, truncated or oversized `out`.
 
 ### `get_config() -> dict`

@@ -25,13 +25,13 @@
 
 A climate data scientist has a HOAPS dataset containing the water vapor (wvpa) variable and wants to reduce its storage footprint. They run the compressor on the wvpa data, providing an absolute error bound. The compressor produces a compressed representation that, when decompressed, reconstructs the water vapor values such that no reconstructed value deviates from the original by more than the specified absolute error bound.
 
-**Why this priority**: This is the core value of the feature — lossy compression with a hard, verifiable accuracy guarantee. Without it, the feature has no purpose.
+**Why this priority**: This is the core value of the feature — lossy compression with a hard, verifiable accuracy guarantee. Without it, the feature has no purpose. (The transformer model itself is introduced in User Story 4; this story may initially use a simpler predictor.)
 
 **Independent Test**: Can be fully tested by compressing a HOAPS wvpa sample, decompressing it, and verifying that the maximum absolute difference between original and reconstructed values is at or below the specified error bound. Delivers the primary value of storage reduction with guaranteed accuracy.
 
 **Acceptance Scenarios**:
 
-1. **Given** a HOAPS wvpa dataset and a specified absolute error bound, **When** the data is compressed and then decompressed, **Then** every reconstructed value is within the error bound of its original value.
+1. **Given** a HOAPS wvpa dataset and a specified absolute error bound greater than zero, **When** the data is compressed and then decompressed, **Then** every reconstructed value is within the error bound of its original value.
 2. **Given** a HOAPS wvpa dataset, **When** the data is compressed, **Then** the compressed representation is smaller than the original uncompressed data.
 
 ---
@@ -88,7 +88,7 @@ The compression algorithm is based on a transformer model. The compressor uses a
 - How does the system handle an error bound of zero? It MUST treat zero as the tightest allowed bound (may still be lossy), allowing other bounds to maximize the compression ratio.
 - How does the system handle a negative or non-finite error bound? It must reject invalid bounds with a clear error.
 - How does the system handle data containing extreme or outlier values? Reconstructed values must still respect the error bound; the compressor adaptively increases precision for such regions while maximizing the overall compression ratio.
-- How does the system handle empty input or a dataset with no valid (non-missing) values? It must not crash and must produce a valid, decompressible output.
+- How does the system handle an input with no valid (non-missing) values? It must not crash and must produce a valid, decompressible output. Fully empty (zero-element) grids are out of scope.
 - How does the system handle NaN or other non-finite values that are not the designated missing-value sentinel? Behavior must be defined (e.g., treated as missing or rejected).
 
 ## Requirements *(mandatory)*
@@ -97,20 +97,20 @@ The compression algorithm is based on a transformer model. The compressor uses a
 
 - **FR-001**: The system MUST accept a HOAPS wvpa dataset as input and produce a compressed representation that can be decompressed back into a wvpa dataset.
 - **FR-002**: The system MUST accept a user-specified absolute error bound that defines the maximum allowed absolute difference between each original and reconstructed value.
-- **FR-003**: The system MUST guarantee that, after decompression, every reconstructed value is within the specified absolute error bound of its original value.
+- **FR-003**: The system MUST guarantee that, after decompression, every reconstructed value is within the specified absolute error bound of its original value. **Exception**: when the configured bound is zero (FR-017), this guarantee is explicitly exempted — output at bound 0 may still be lossy.
 - **FR-004**: The system MUST preserve missing values exactly: the missing-value mask after decompression MUST be identical to the original, and no value may change between valid and missing status.
-- **FR-005**: The system MUST use a transformer-based model as the core of its compression algorithm.
+- **FR-005**: The system MUST use a transformer-based model as the core of its compression algorithm. (Enforcement is completed by User Story 4; earlier stories may use simpler placeholders.)
 - **FR-006**: The system MUST produce a compressed representation that is smaller than the original uncompressed data for typical HOAPS wvpa inputs.
 - **FR-007**: The system MUST support configurable error bounds so users can trade off accuracy against compression ratio.
 - **FR-008**: The system MUST reject invalid error bounds (negative or non-finite) with a clear error message; a zero bound is valid and treated as the tightest allowed bound.
 - **FR-009**: The system MUST handle inputs that are entirely or largely missing values without failing, and MUST preserve the missing-value mask exactly in such cases.
-- **FR-010**: The system MUST handle empty inputs and inputs with no valid values gracefully, producing a valid, decompressible output.
+- **FR-010**: The system MUST handle inputs with no valid (non-missing) values gracefully, producing a valid, decompressible output. (Degenerate zero-element grids are out of scope; `shape` components are positive per the codec contract.)
 - **FR-011**: The system MUST define and document the behavior for non-finite values (e.g., NaN) that are not the designated missing-value sentinel.
 - **FR-012**: The system MUST report the achieved compression ratio and confirm that the error bound was respected for each compression run.
 - **FR-013**: The system MUST exploit both spatial and temporal structure of the wvpa field, compressing across time steps to maximize the compression ratio at any given error bound.
 - **FR-014**: The system MUST expose its compression and decompression functionality through a Python library/API that implements the methods of the `numcodecs.Codec` class (e.g., `encode`, `decode`, `get_config`, `from_config`, `codec_id`), so it can be used as a drop-in codec in numcodecs-compatible pipelines.
 - **FR-015**: The system MUST store the missing-value mask separately as a compact bitmask alongside the compressed valid values, guaranteeing full (lossless) preservation of missing values while maximizing the compression ratio.
-- **FR-016**: The system MUST always guarantee the error bound (never violate it), adaptively increasing precision for hard-to-approximate regions (e.g., outliers) while maximizing the overall compression ratio.
+- **FR-016**: The system MUST always guarantee the error bound (never violate it), adaptively increasing precision for hard-to-approximate regions (e.g., outliers) while maximizing the overall compression ratio. This guarantee inherits the FR-003 exemption when the bound is zero.
 - **FR-017**: The system MUST treat a user-requested error bound of zero as the tightest allowed bound (which may still be lossy), so that other bounds can maximize the compression ratio.
 - **FR-018**: The system MAY adopt techniques used in JPEG AI (learned/neural image compression) and attention mechanisms to maximize the compression ratio, provided the error bound and missing-value preservation guarantees are never violated.
 
@@ -126,11 +126,11 @@ The compression algorithm is based on a transformer model. The compressor uses a
 
 ### Measurable Outcomes
 
-- **SC-001**: For any HOAPS wvpa input and any valid error bound, 100% of reconstructed values are within the specified absolute error bound of their original values.
+- **SC-001**: For any HOAPS wvpa input and any valid error bound greater than zero, 100% of reconstructed values are within the specified absolute error bound of their original values. At bound 0 (exempted per FR-003), the error is bounded only by the tightest available representation.
 - **SC-002**: The missing-value mask is preserved with 100% accuracy: after decompression, the mask is identical to the original and no value changes between valid and missing status.
 - **SC-003**: For typical HOAPS wvpa inputs, the compressed representation is at least 50% smaller than the original uncompressed data at a reasonable error bound.
 - **SC-004**: Users can configure the error bound and observe that a looser bound yields a smaller compressed size than a tighter bound on the same data.
-- **SC-005**: The compressor completes compression and decompression of a standard HOAPS wvpa field within a time acceptable for offline scientific processing (no real-time requirement).
+- **SC-005**: The compressor completes compression and decompression of a standard HOAPS wvpa field (about 1–50 MB uncompressed) in minutes (not hours) on a single machine — offline batch timing, no real-time requirement.
 - **SC-006**: Invalid error bounds (negative or non-finite) are rejected with a clear error message 100% of the time; a zero bound is accepted as the tightest allowed bound.
 - **SC-007**: At any given error bound, the compressor achieves a compression ratio at least as high as a spatial-only (per-field) baseline on the same data, demonstrating the benefit of exploiting temporal structure.
 
