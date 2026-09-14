@@ -1,113 +1,77 @@
-# Implementation Plan: [FEATURE]
+# Implementation Plan: HOAPS WVPA Transformer Compressor
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Branch**: `001-hoaps-wvpa-compressor` | **Date**: 2026-09-14 | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/speckit-plan` command; its definition describes the execution workflow.
+**Input**: Feature specification from `/specs/001-hoaps-wvpa-compressor/spec.md`
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Build a Python library exposing a `numcodecs.Codec`-compatible compressor for the HOAPS water vapor (wvpa) variable. The codec exploits both spatial and temporal structure with a transformer-based model (optionally using JPEG AI-style learned compression techniques and attention mechanisms) and guarantees a hard, user-specified absolute error bound: every reconstructed value differs from the original by at most the bound. Missing values are preserved exactly via a compact, losslessly stored bitmask. The error bound is never violated; precision is adaptively increased where the data is hard to approximate, and the design maximizes compression ratio at any given bound. A zero bound is accepted as the tightest allowed bound (may still be lossy if the underlying quanta cannot represent values exactly).
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
+**Language/Version**: Python 3.11+
 
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
+**Primary Dependencies**: numcodecs (>=0.12, Codec ABC contract), numpy, PyTorch (transformer model and learned entropy coding), pytest (testing)
 
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
+**Storage**: N/A (library; compressed bytes are returned to the caller or consumed from a buffer). Encoded stream is a self-describing byte container (see contracts/codec-api.md).
 
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
+**Testing**: pytest with property/round-trip tests over generated gridded fields
 
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
+**Target Platform**: Linux (single machine, CPU; GPU optional acceleration, not required)
 
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+**Performance Goals**: Compression and decompression of a monthly HOAPS wvpa gridded time series (≈ 360 × 180 × N time steps, float32 ≈ 1–50 MB) completes in minutes on a single machine (offline batch acceptable); compression ratio ≥ 2× (≥ 50% smaller) at a reasonable error bound (SC-003), and ≥ spatial-only baseline at any given bound (SC-007).
 
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]
+**Constraints**: Hard absolute error bound never violated on any value (FR-003/FR-016); missing-value mask preserved bit-exactly (FR-004/FR-015); codec parameters JSON-serializable per `numcodecs.Codec.get_config()`; single-machine, offline; no real-time requirement.
 
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
-
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
-
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Scale/Scope**: Single variable (HOAPS wvpa) compression; gridded space-time fields; v1 scope excludes CLI, real-time/streaming, and distributed processing.
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+The project constitution (`.specify/memory/constitution.md`) is an un-ratified template containing no binding principles or gates. **Result: no ratified constitution — no gates apply.** Re-checked after Phase 1 design (single library project, standard test layout): no violations.
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/[###-feature]/
+specs/001-hoaps-wvpa-compressor/
 ├── plan.md              # This file (/speckit-plan command output)
 ├── research.md          # Phase 0 output (/speckit-plan command)
 ├── data-model.md        # Phase 1 output (/speckit-plan command)
 ├── quickstart.md        # Phase 1 output (/speckit-plan command)
 ├── contracts/           # Phase 1 output (/speckit-plan command)
+│   └── codec-api.md     # numcodecs.Codec public API + encoded byte-container contract
 └── tasks.md             # Phase 2 output (/speckit-tasks command - NOT created by /speckit-plan)
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
+# Single project (library)
+src/hoaps_compressor/
+├── __init__.py
+├── codec.py             # HoapsWvpaCodec(numcodecs.abc.Codec): encode/decode/get_config/from_config/codec_id
+├── container.py         # Encoded byte-container read/write: header, bitmask, quanta payloads, metadata
+├── mask.py              # Missing-value mask extraction, compact bitpacking, restoration
+├── bound.py             # Error-bound validation (reject negative/non-finite; zero = tightest bound)
+├── model/
+│   ├── __init__.py
+│   ├── transformer.py   # Space-time transformer predictor (attention-based, JPEG AI-inspired)
+│   └── entropy.py       # Learned/entropy coding of quantized residuals
+├── quant.py             # Residual quantization bound-tied to the absolute error bound
+└── verify.py            # Post-encode verification: max |error| ≤ bound, mask identical
 
 tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+├── contract/            # numcodecs.Codec contract tests (encode/decode/get_config/from_config/codec_id)
+├── integration/         # End-to-end round trips on HOAPS wvpa-like gridded fields
+└── unit/                # mask, bound, container, quantization unit tests
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: Single library project under `src/hoaps_compressor/` with a `tests/` tree split into contract/integration/unit, matching the `numcodecs.Codec` drop-in library delivery chosen in the spec (FR-014). No CLI, no web/mobile tiers.
 
 ## Complexity Tracking
 
-> **Fill ONLY if Constitution Check has violations that must be justified**
-
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+> No Constitution Check violations to justify (constitution is an un-ratified template; no gates apply).

@@ -1,0 +1,127 @@
+# Contract: Public Codec API (`numcodecs.Codec`)
+
+**Branch**: `001-hoaps-wvpa-compressor` | **Date**: 2026-09-14
+
+Public interface of `hoaps_compressor`. The library exposes a single codec class implementing the `numcodecs.abc.Codec` contract (numcodecs 0.15.0). See [../data-model.md](../data-model.md) for entity details and [../research.md](../research.md) R1/R7 for the numcodecs grounding.
+
+## 1. Class: `HoapsWvpaCodec`
+
+```python
+from numcodecs.abc import Codec
+
+class HoapsWvpaCodec(Codec):
+    codec_id = "hoaps-wvpa"
+
+    def __init__(self, shape, error_bound, missing_value="nan", dtype="float32"): ...
+    def encode(self, buf): ...                 # buffer-like -> bytes (EncodedStream)
+    def decode(self, buf, out=None): ...       # bytes (, out) -> buffer-like
+    def get_config(self): -> dict              # JSON-serializable, includes "id"
+    @classmethod
+    def from_config(cls, config): -> HoapsWvpaCodec
+```
+
+### Constructor
+
+`__init__(shape, error_bound, missing_value="nan", dtype="float32")`
+
+| Parameter | Type | Meaning |
+|-----------|------|---------|
+| `shape` | `(time, lat, lon)` 3-tuple of positive ints | Grid shape; flat buffers are interpreted as this grid. |
+| `error_bound` | finite float ≥ 0 | Absolute error bound (physical wvpa units). **0 is valid** = tightest allowed bound (may still be lossy). Negative or non-finite → `ValueError`. |
+| `missing_value` | finite float or `"nan"` | Sentinel marking missing elements. Default `"nan"`. |
+| `dtype` | `"float32"` | Fixed in v1; other values → `ValueError`. |
+
+### Registration
+
+```python
+import numcodecs.registry
+numcodecs.registry.register_codec(HoapsWvpaCodec)
+```
+
+Performed automatically on `import hoaps_compressor`. After import:
+
+```python
+codec = numcodecs.registry.get_codec({"id": "hoaps-wvpa", "shape": (12, 180, 360), "error_bound": 0.01})
+```
+
+## 2. Method Contracts
+
+### `encode(buf) -> bytes`
+
+- **Input**: buffer-like of `4·prod(shape)` bytes, C-contiguous, interpreted as float32 grid with the configured `shape`; missing elements equal to `missing_value` (or NaN when `missing_value="nan"`).
+- **Behavior**: extract mask → predict valid values (space-time transformer) → quantize residuals (step ≤ `error_bound`) → entropy-code (bit-exact) → verify-and-repair until no reconstructed value deviates by more than `error_bound` → frame container with bitpacked mask, coded residuals, metadata, checksum.
+- **Output**: `bytes` container (self-describing; see §3).
+- **Errors**: `ValueError` on wrong buffer size/content; codec never returns a stream that violates the bound (verified internally before return).
+
+### `decode(buf, out=None) -> buffer-like`
+
+- **Input**: container bytes from `encode` (or a byte-compatible stream of the same major container version and model version).
+- **`out` semantics** (numcodecs contract): if provided, must be a writeable buffer of exactly `4·prod(shape)` bytes; decoded values are written into it and it is returned. If `None`, a fresh NumPy array (shape `shape`, dtype float32) is returned.
+- **Behavior**: validate header/checksum → restore mask bit-exactly → entropy-decode residuals → inverse-quantize with recorded step → predict where required (same model/weights) → write sentinel into missing positions.
+- **Guarantees**: for every valid position, `|decoded − original| ≤ error_bound` (SC-001); missing positions identical to original sentinel (SC-002).
+- **Errors**: `ValueError` on bad magic/checksum/version, shape/model mismatch, truncated or oversized `out`.
+
+### `get_config() -> dict`
+
+Returns, all JSON-serializable:
+
+```json
+{
+  "id": "hoaps-wvpa",
+  "shape": [12, 180, 360],
+  "error_bound": 0.01,
+  "missing_value": "nan",
+  "dtype": "float32"
+}
+```
+
+`missing_value` may be a finite float (e.g. `9.96921e+36`, the NetCDF default fill) or the string `"nan"`.
+
+### `from_config(config) -> HoapsWvpaCodec`
+
+Classmethod; inverse of `get_config`. Accepts the config dict (with `"id"` present; `"id"` validated as `"hoaps-wvpa"`). Round-trip guarantee: `HoapsWvpaCodec(**{k: v for k, v in codec.get_config().items() if k != "id"})` is behaviorally identical to `codec` (same encode/decode byte outputs).
+
+## 3. Encoded Stream / Container Contract
+
+All multi-byte integers little-endian. Fixed layout, length-prefixed payload sections:
+
+| Offset | Size | Field |
+|--------|------|-------|
+| 0 | 4 | Magic `"HWPC"` |
+| 4 | 2 | Container version (uint16, major ABI `1`) |
+| 6 | 2 | Flags (bit0: payloads outer-losslessly-compressed; bits1+: reserved) |
+| 8 | 4 | Model version id (uint32) |
+| 12 | 4 | Header extra byte length `H` (uint32) |
+| 16 | H | Header extra (JSON; shape, dtype, sentinel descriptor, quantization step/lattice, per-block mode count, error_bound as recorded) |
+| 16+H | 8 | Mask payload length (uint64) |
+| ... | var | Mask payload (bitpacked missing mask, `ceil(N/8)` bytes, stored losslessly) |
+| ... | 8 | Residual payload length (uint64) |
+| ... | var | Residual payload (per-block mode ids + entropy-coded symbols + repair corrections; empty when no valid values) |
+| ... | 4 | CRC-32 checksum over all preceding bytes |
+
+**Compatibility rules**:
+- Different major container version → decode MUST fail with a clear error.
+- Model version in stream must match the codec's bundled model version → otherwise clear error.
+- `flags` bit0 set → payload sections are additionally losslessly compressed; both operations exact.
+- The container independently records everything needed for integrity; `get_config` remains the source of truth for interpretation (numcodecs stores config separately).
+
+## 4. Error Contract (all errors raise `ValueError` unless noted)
+
+| Situation | Error |
+|-----------|-------|
+| `error_bound` < 0 or non-finite | `ValueError` at construction (FR-008) |
+| `shape` not 3 positive ints; `dtype != "float32"` | `ValueError` at construction |
+| encode buffer size ≠ `4·prod(shape)` / non-contiguous | `ValueError` |
+| negative/non-finite values in data not matching sentinel | treated as missing (counted and reported via header only; FR-011) |
+| decode: bad magic/version/checksum/model mismatch | `ValueError` |
+| decode: `out` wrong size | `ValueError` |
+
+## 5. In-Process Verification Hook (FR-012)
+
+Each `encode` computes and includes in the header-extra JSON:
+
+```json
+{ "metrics": { "max_abs_error": <float, verified ≤ error_bound>, "n_repaired": <int>, "uncompressed_size": <int>, "compressed_size": <int>, "cr": <float, compressed/uncompressed> } }
+```
+
+This is verification data (not required for decode correctness) demonstrating SC-001/SC-003 in-process.
