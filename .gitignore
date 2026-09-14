@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Spec-kit related files
+.github/skills
+.specify/
+
+# Virtual environments
+.venv
+
+# VS code project settings
+.vscode/
+
+# Agent files
+.kilo
+
+# Local environment configs (may contain credentials; never commit)
+.env
+.env.local
+.env*.local
+
