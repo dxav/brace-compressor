@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hoaps-compressor"
+version = "0.1.0"
+description = "Error-bounded transformer-based numcodecs codec for HOAPS wvpa climate data"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "HOAPS Compressor Team" }]
+keywords = ["numcodecs", "codec", "compression", "climate", "HOAPS", "transformer"]
+dependencies = [
+    "numpy>=1.26",
+    "numcodecs>=0.12",
+    "torch>=2.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "hypothesis>=6.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"hoaps_compressor.model" = ["*.pt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
