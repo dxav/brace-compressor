@@ -42,6 +42,8 @@ codec2 = hoaps_compressor.HoapsWvpaCodec.from_config(cfg)
 
 ## Design docs
 
+- **Architecture** (pipeline, transformer & how it's trained, attention
+  predictor, libraries/where torch is used): `docs/architecture.md`
 - Spec: `specs/001-hoaps-wvpa-compressor/spec.md`
 - Plan/research: `specs/001-hoaps-wvpa-compressor/plan.md`, `research.md`
 - Contract: `specs/001-hoaps-wvpa-compressor/contracts/codec-api.md`
