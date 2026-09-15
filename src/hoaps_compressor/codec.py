@@ -24,6 +24,17 @@ from .model.transformer import TransformerPredictor
 from .quant import derive_step
 from .verify import verify_and_repair
 
+# Optional Rust-accelerated causal scan (bit-exact port of the Python
+# loops). Falls back to the pure-Python implementation if the extension
+# is not installed.
+try:
+    from hoaps_scan import causal_scan_decode as _rs_scan_decode
+    from hoaps_scan import causal_scan_encode as _rs_scan_encode
+
+    _HAS_RUST = True
+except Exception:  # pragma: no cover - extension optional
+    _HAS_RUST = False
+
 MODEL_VERSION = TRANSFORMER_MODEL_VERSION
 CODEC_VERSION = "0.1.0"
 OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass (FR-018)
@@ -272,9 +283,18 @@ class HoapsWvpaCodec:
         neighbors (temporal parent, left, top, top-left, top-right),
         quantizes the residual directly on the step-lattice (origin 0;
         entropy is shift-invariant, and the header carries 0.0), and
-        materializes the exact decoder state. Plain-float inner loops
-        (SC-005). Returns (symbols, recon_rows, origin).
+        materializes the exact decoder state. Uses the Rust extension
+        when available (bit-exact), else the pure-Python loops.
+        Returns (symbols, recon_rows, origin).
         """
+        if _HAS_RUST:
+            symbols, recon_rows = _rs_scan_encode(
+                np.ascontiguousarray(field, dtype=np.float32),
+                np.ascontiguousarray(mask),
+                np.ascontiguousarray(prior, dtype=np.float32),
+                float(step),
+            )
+            return symbols, recon_rows, 0.0
         t, lat, lon = self.shape
         n_valid = int(mask.size - int(mask.sum()))
         symbols = np.zeros(n_valid, dtype=np.int64)
@@ -330,6 +350,14 @@ class HoapsWvpaCodec:
 
     def _causal_scan_decode(self, prior, mask, symbols, step, origin):
         """Decoder mirror of :meth:`_causal_scan_encode` (same order/math)."""
+        if _HAS_RUST:
+            return _rs_scan_decode(
+                np.ascontiguousarray(prior, dtype=np.float32),
+                np.ascontiguousarray(mask),
+                np.ascontiguousarray(symbols, dtype=np.int64),
+                float(step),
+                float(origin),
+            )
         t, lat, lon = self.shape
         recon_rows = np.zeros((t * lat, lon), dtype=np.float64)
         msk = mask

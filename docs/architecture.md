@@ -27,7 +27,17 @@ Companion docs: [performance.md](performance.md) (timings/CR),
 │    ├── verify.py → verify-and-repair (bound guarantee)                    │
 │    └── container.py → byte framing: header / payloads / CRC-32            │
 │                                                                           │
+│  rust/hoaps_scan (PyO3)  → causal scan encode/decode (bit-exact, ~100×)   │
+│                                                                           │
 └───────────────────────────────────────────────────────────────────────────┘
+```
+
+The causal scan — the dominant runtime cost — is implemented twice: a
+pure-Python reference and a **Rust extension** (`rust/hoaps_scan`, a PyO3
+module `hoaps_scan`). `codec.py` imports the Rust module when available
+(`_HAS_RUST`) and falls back to the Python loops otherwise. The Rust
+port is bit-exact (verified identical symbols and reconstruction), so
+encoded streams are byte-identical regardless of which path ran.
 ```
 
 One **public class**: `HoapsWvpaCodec` (in `codec.py`). Everything else is
@@ -312,7 +322,39 @@ So the division of labor is:
 | Stage | Captures | Cost |
 |---|---|---|
 | Transformer base prior | large-scale climatology-like smooth structure; cold start | 1 torch projection per encode/decode |
-| Causal scan | local + temporal correlation (the real CR driver) | O(N) pure-Python loop |
+| Causal scan | local + temporal correlation (the real CR driver) | O(N) — Rust (~100× faster than Python) |
+
+### 6.1 Rust acceleration of the causal scan
+
+The causal scan is a tight, data-dependent loop over every valid cell —
+the single most expensive part of encode and decode. It is ported to a
+**PyO3 Rust extension** (`rust/hoaps_scan`, module `hoaps_scan`) exposing
+two functions:
+
+- `causal_scan_encode(field, mask, prior, step) -> (symbols, recon_rows)`
+- `causal_scan_decode(prior, mask, symbols, step, origin) -> recon_rows`
+
+Both are **bit-exact ports** of the Python loops: identical scan order,
+identical neighbor weights, identical `floor(r/step + 0.5)` quantization
+and `pred + q·step` reconstruction. The codec dispatches to Rust when
+`hoaps_scan` is importable and otherwise falls back to the Python
+reference, so correctness and stream compatibility never depend on which
+path ran.
+
+Measured on an 8×90×180 field (≈ 130 k valid cells):
+
+| Path | Encode scan time |
+|---|---|
+| Pure Python | ~0.42 s |
+| Rust (release) | ~0.004 s |
+
+≈ **100× speedup**. The remaining encode/decode cost is dominated by the
+torch base-prior projection and the entropy coder, both of which scale
+linearly and are far cheaper than the old Python scan.
+
+Build: the extension is built by `maturin` (see `pyproject.toml`
+`[tool.maturin]`); `maturin develop --release` installs it into the
+active virtualenv. The Rust crate lives under `rust/hoaps_scan/`.
 
 ---
 
@@ -394,6 +436,8 @@ offset  size  field
 | **numpy** | ≥ 1.26 | every module | array math: mask extraction/bitpacking (`np.packbits`), diffusion context, residual math, float32 buffers | the array substrate of the whole codec |
 | **numcodecs** | ≥ 0.12 | `codec.py`, `__init__.py` | the `Codec` ABC the class subclasses; `numcodecs.registry.register_codec`/`get_codec` at import | drop-in compatibility with zarr/numcodecs pipelines (FR-014) |
 | **torch** (CPU) | ≥ 2.2 | **only `model/transformer.py`** | the attention predictor | the neural core (FR-005/FR-018) |
+| **Rust + PyO3** | rustc ≥ 1.7x | `rust/hoaps_scan/` (module `hoaps_scan`) | the causal scan encode/decode hot loop | ~100× speedup over the Python scan (SC-005) |
+| **maturin** | ≥ 1.5 (build) | `pyproject.toml` build backend | builds/installs the Rust extension | packaging the PyO3 module |
 | pytest | ≥ 8.0 (extra `test`) | `tests/` | test runner | contract/unit/integration tiers |
 | hypothesis | ≥ 6.0 (extra `test`) | available for property tests | generative testing | declared in packaging (currently the suite is deterministic-seed based) |
 

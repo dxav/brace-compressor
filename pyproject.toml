@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["setuptools>=68", "wheel", "maturin>=1.5"]
+build-backend = "maturin"
 
 [project]
 name = "hoaps-compressor"
@@ -20,11 +20,10 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8.0", "hypothesis>=6.0"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-"hoaps_compressor.model" = ["*.pt"]
+[tool.maturin]
+manifest-path = "rust/hoaps_scan/Cargo.toml"
+python-source = "src"
+module-name = "hoaps_scan"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

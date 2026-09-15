@@ -13,6 +13,12 @@ wheels/
 # Virtual environments
 .venv
 
+# Rust / maturin build artifacts
+rust/**/target/
+rust/**/Cargo.lock
+*.so
+*.pyd
+
 # VS code project settings
 .vscode/
 
@@ -24,3 +30,8 @@ wheels/
 .env.local
 .env*.local
 
+
+# Data
+data/
+*.npy
+*.nc
