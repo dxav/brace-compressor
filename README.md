@@ -40,6 +40,18 @@ cfg = codec.get_config()          # JSON-serializable, id="hoaps-wvpa"
 codec2 = hoaps_compressor.HoapsWvpaCodec.from_config(cfg)
 ```
 
+### Statistics utility
+
+Run a compression round trip with a full CR/statistics report on a
+synthetic HOAPS-like field (or your own `.npy`):
+
+```bash
+.venv/bin/python scripts/compress_stats.py --shape 8 90 180 --bound 0.05
+.venv/bin/python scripts/compress_stats.py --input myfield.npy --bound 0.01
+.venv/bin/python scripts/compress_stats.py --shape 4 32 64 --sweep 0.01 0.05 0.2  # CR-vs-accuracy table
+.venv/bin/python scripts/compress_stats.py --shape 2 16 16 --json                 # machine-readable output
+```
+
 ## Design docs
 
 - **Architecture** (pipeline, transformer & how it's trained, attention
