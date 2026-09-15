@@ -1,6 +1,6 @@
 # Data Model: HOAPS WVPA Transformer Compressor
 
-**Branch**: `001-hoaps-wvpa-compressor` | **Date**: 2026-09-14
+**Branch**: `001-hoaps-wvpa-attention` | **Date**: 2026-09-15
 
 Entities and data shapes for the compressor library. Types are given as Python/NumPy-level descriptions; the on-the-wire framing is specified in [contracts/codec-api.md](./contracts/codec-api.md).
 

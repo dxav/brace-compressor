@@ -1,6 +1,6 @@
 # Implementation Plan: HOAPS WVPA Transformer Compressor
 
-**Branch**: `001-hoaps-wvpa-compressor` | **Date**: 2026-09-14 | **Spec**: [spec.md](./spec.md)
+**Branch**: `001-hoaps-wvpa-attention` | **Date**: 2026-09-15 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/001-hoaps-wvpa-compressor/spec.md`
 
@@ -73,5 +73,50 @@ tests/
 **Structure Decision**: Single library project under `src/hoaps_compressor/` with a `tests/` tree split into contract/integration/unit, matching the `numcodecs.Codec` drop-in library delivery chosen in the spec (FR-014). No CLI, no web/mobile tiers.
 
 ## Complexity Tracking
+
+> No Constitution Check violations to justify (constitution is an un-ratified template; no gates apply).
+
+---
+
+## Phase 2 (Enhancement): Intensive Transformer & Attention Prediction
+
+**Branch**: `001-hoaps-wvpa-attention` | **Date**: 2026-09-15
+
+**Goal**: Increase compression ratio by making the transformer/attention the primary predictor during the causal scan, not just a cold-start prior. The current codec calls `TransformerPredictor.base_prior(mask)` once before scanning; after the first reconstructed neighbor exists, prediction is a fixed weighted average of causal neighbors (temporal parent 4, left 2, top 2, top-left 1, top-right 1). This leaves most residual entropy untouched by attention.
+
+### Problem statement
+
+- `base_prior` runs once per encode/decode on the mask only. It is a smooth cold-start hint.
+- The causal scan (Rust/Python) does the real per-cell prediction from reconstructed neighbors.
+- Deeper global attention or a larger token budget would mostly refine cold starts, not the dominant residual stream.
+- Full-grid attention over a 6.45 M-cell HOAPS field is O(N²) and infeasible.
+
+### Design direction
+
+1. **Train the existing transformer** on HOAPS masked-cell prediction (self-supervised: sample a mask, predict hidden valid values, MSE/Huber loss). Export deterministic, versioned weights via the existing `serialize_weights()`/`load_weights()` mechanism; bump `MODEL_VERSION`.
+2. **Use attention during the causal scan** — process valid cells in causal blocks (e.g. 128–256 positions). For each block, feed the transformer:
+   - reconstructed temporal neighbors,
+   - reconstructed spatial neighbors,
+   - the mask,
+   - positional encodings,
+   with a **causal/local attention mask** so each position attends only to already-reconstructed cells. The transformer output becomes the prediction; the existing weighted predictor remains a fallback.
+3. **Train with decoder-state simulation** — feed reconstructed/quantized previous values (not original values) so the model does not rely on teacher forcing that disappears at decode.
+4. **Keep the hard error guarantee unchanged** — the transformer only predicts the residual center; quantization stays lossless at the symbol level; `verify_and_repair()` remains the final correctness boundary.
+
+### Implementation order
+
+1. Fix and test the `out_scale` initialization (currently zeroed, so the prior is near-constant).
+2. Add trained-weight loading for a HOAPS model.
+3. Benchmark the trained base prior alone.
+4. Add block-local causal attention in Python first (correctness), then port the finalized block predictor to Rust/TorchScript.
+5. Compare residual entropy, repair count, runtime, and compression ratio.
+
+### Success criteria (this phase)
+
+- Compression ratio strictly higher than the current baseline at the same error bound on `data/wvpa_2020-08-01_07.npy`.
+- Encode/decode remain bit-identical (deterministic predictor, identical causal walk).
+- Hard error bound and mask preservation guarantees unchanged (all existing tests still pass).
+
+## Complexity Tracking (Enhancement)
 
 > No Constitution Check violations to justify (constitution is an un-ratified template; no gates apply).

@@ -1,6 +1,6 @@
 # Contract: Public Codec API (`numcodecs.Codec`)
 
-**Branch**: `001-hoaps-wvpa-compressor` | **Date**: 2026-09-14
+**Branch**: `001-hoaps-wvpa-attention` | **Date**: 2026-09-15
 
 Public interface of `hoaps_compressor`. The library exposes a single codec class implementing the `numcodecs.abc.Codec` contract (numcodecs 0.15.0). See [../data-model.md](../data-model.md) for entity details and [../research.md](../research.md) R1/R7 for the numcodecs grounding.
 

@@ -1,6 +1,6 @@
 # Quickstart: HOAPS WVPA Transformer Compressor
 
-**Branch**: `001-hoaps-wvpa-compressor` | **Date**: 2026-09-14
+**Branch**: `001-hoaps-wvpa-attention` | **Date**: 2026-09-15
 
 Runnable validation scenarios proving the feature end-to-end. Implementation details live in [../plan.md](../plan.md) and `tasks.md`; entity/byte-level details in [data-model.md](data-model.md) and [contracts/codec-api.md](contracts/codec-api.md).
 
@@ -118,6 +118,29 @@ enc = codec_all_missing.encode(all_missing)
 dec = codec_all_missing.decode(enc)
 assert np.isnan(dec).all() and enc  # non-empty container, mask restored
 ```
+
+## Scenario 6 — Attention-enhanced prediction raises CR (enhancement)
+
+Proves the intensive transformer/attention predictor (plan.md "Phase 2 (Enhancement)", research.md R11) raises compression ratio at the same error bound without breaking guarantees.
+
+```bash
+# Train the prior on HOAPS data (self-supervised masked-cell prediction)
+python scripts/train_prior.py --input data/wvpa_2020-08-01_07.npy --out src/hoaps_compressor/model/weights/prior_v3.hwpm
+
+# Benchmark before/after on the same field and bound
+python scripts/compress_stats.py --input data/wvpa_2020-08-01_07.npy --bound 0.05
+```
+
+**Expected**:
+- `MODEL_VERSION` bumped (container header reflects it); decode of old streams with a different model version raises `ValueError: model version mismatch`.
+- Compression ratio at the same bound is strictly higher than the pre-enhancement baseline (recorded in `docs/performance.md`).
+- Max error still ≤ bound; mask still bit-identical; encode/decode still deterministic (identical causal walk).
+
+```bash
+pytest tests -q   # full suite still green with the new predictor active
+```
+
+**Expected**: all existing tests pass (hard error bound, mask fidelity, determinism, config, container) plus the new block-local causal predictor unit tests.
 
 **Expected**: no crash; valid container; mask restored exactly.
 

@@ -1,6 +1,6 @@
 # Research: HOAPS WVPA Transformer Compressor
 
-**Branch**: `001-hoaps-wvpa-compressor` | **Date**: 2026-09-14
+**Branch**: `001-hoaps-wvpa-attention` | **Date**: 2026-09-15
 
 This document resolves the technical unknowns from the plan's Technical Context. Each entry records the decision, rationale, and alternatives considered.
 
@@ -132,3 +132,16 @@ This document resolves the technical unknowns from the plan's Technical Context.
 | R8 | testing | contract / unit / integration tiers mapped to SC-001…SC-007 |
 | R9 | distribution | Python package, src layout, auto-register, bundled weights |
 | R10 | performance | offline, single-machine, CPU floor + optional GPU, minutes per 1–50 MB field |
+
+## R11. Intensive transformer & attention prediction (enhancement)
+
+**Decision**: Make the transformer the primary predictor during the causal scan via **block-local causal attention** over already-reconstructed neighbors, and **train** the transformer on HOAPS masked-cell prediction. The current `base_prior(mask)` runs once as a cold-start hint; the causal scan then uses a fixed weighted average. To raise CR, process valid cells in causal blocks (128–256 positions), feed the transformer reconstructed temporal/spatial neighbors + mask + positional encodings with a causal/local attention mask, and use its output as the prediction (weighted-average fallback retained).
+
+**Rationale**: The dominant residual stream is predicted by the fixed weighted average, not attention. Deeper global attention or a larger token budget would only refine cold starts. Block-local causal attention is O(N·B) (B = block size) rather than O(N²), keeping full-grid HOAPS fields tractable, and is decode-consistent because it consumes only reconstructed state. Training with decoder-state simulation (feeding reconstructed/quantized previous values, not originals) prevents teacher-forcing collapse at decode.
+
+**Alternatives considered**:
+- Full-grid self-attention over the whole 6.45 M-cell field — rejected: O(N²) infeasible.
+- Deeper/wider global transformer on the coarse prior only — rejected: refines cold starts, not the residual stream.
+- End-to-end learned autoencoder — rejected: error bound only statistical, violates FR-003 by design.
+
+**Guarantee impact**: None. The transformer only predicts the residual center; quantization stays lossless at the symbol level; `verify_and_repair()` remains the final correctness boundary. Encode/decode determinism is preserved by the identical causal walk and deterministic weights.

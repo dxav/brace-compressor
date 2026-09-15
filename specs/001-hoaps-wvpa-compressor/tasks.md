@@ -199,6 +199,25 @@ Task: "Implement encode in src/hoaps_compressor/codec.py"
 
 ---
 
+## Phase 4: Intensive Transformer & Attention Prediction (Enhancement)
+
+**Branch**: `001-hoaps-wvpa-attention` | **Date**: 2026-09-15
+
+**Purpose**: Make the transformer/attention the primary predictor during the causal scan (not just a cold-start prior) to raise compression ratio, while preserving the hard error bound, mask fidelity, and encode/decode determinism. See plan.md "Phase 2 (Enhancement)" and research.md R11.
+
+- [ ] T036 [P] Fix `out_scale` initialization in `src/hoaps_compressor/model/transformer.py`: currently `_init_weights()` zeroes the scalar `out_scale`, so the prior is near-constant (`tanh(0)=0`). Initialize it to a non-zero value (e.g. 1.0) so the transformer output is not collapsed; add a unit test in `tests/unit/test_transformer.py` asserting the prior is not constant across a varied mask
+- [ ] T037 [P] Add a HOAPS training utility `scripts/train_prior.py` implementing self-supervised masked-cell prediction: sample a mask, hide valid values, predict them from the 6-channel context, loss = MSE (optionally Huber); train on `data/wvpa_2020-08-01_07.npy` (and any additional HOAPS slices); export weights via `TransformerPredictor.serialize_weights()` to a versioned blob
+- [ ] T038 [P] Add trained-weight loading path: `TransformerPredictor.load_weights(blob)` already exists; add a package-level default weights file (e.g. `src/hoaps_compressor/model/weights/prior_v3.hwpm`) and load it in `TransformerPredictor.__init__` when present; bump `MODEL_VERSION` to 3; keep deterministic random init as fallback when weights are absent
+- [ ] T039 [P] Benchmark the trained base prior alone: run `scripts/compress_stats.py --input data/wvpa_2020-08-01_07.npy --bound <b>` before/after training and record CR, max error, encode/decode time in `docs/performance.md`
+- [ ] T040 [P] Add block-local causal attention predictor in Python: in `src/hoaps_compressor/model/transformer.py`, add a method that processes valid cells in causal blocks (128–256 positions), feeding reconstructed temporal/spatial neighbors + mask + positional encodings with a causal/local attention mask; output becomes the per-cell prediction; keep the existing weighted-average predictor as fallback
+- [ ] T041 [P] Add unit tests for the block-local causal predictor in `tests/unit/test_transformer.py`: determinism (same state → same prediction), causality (a cell never attends to a not-yet-reconstructed cell), and equivalence with the weighted-average fallback on cold starts
+- [ ] T042 [P] Integrate the block-local causal predictor into `src/hoaps_compressor/codec.py` encode/decode causal scans (`_causal_scan_encode`/`_causal_scan_decode`), replacing the fixed weighted average where the transformer is available; ensure encode and decode walk the same blocks in the same order (determinism)
+- [ ] T043 [P] Port the finalized block-local causal predictor to Rust (`rust/hoaps_scan/src/lib.rs`) or TorchScript for speed, keeping it bit-exact with the Python reference; dispatch to the accelerated path when available
+- [ ] T044 [P] Benchmark CR and runtime on `data/wvpa_2020-08-01_07.npy` at multiple bounds; record results in `docs/performance.md`; confirm CR strictly higher than the pre-enhancement baseline at the same bound
+- [ ] T045 [P] Re-run the full test suite (`pytest tests -q`) and confirm all existing tests still pass (hard error bound, mask fidelity, determinism, config, container) with the new predictor active
+
+---
+
 ## Implementation Strategy
 
 ### MVP First (User Story 1 Only)
