@@ -31,21 +31,39 @@ Downloaded from the ESIWACE object store, `wvpa` variable, fill value
 
 ### Enhancement phase (T039/T044): trained base prior + block-local causal predictor
 
-After training the transformer prior on HOAPS masked-cell prediction
-(`scripts/train_prior.py`, coarse grid ≤ 8192 tokens, `MODEL_VERSION=3`)
-and loading it as the default weights, the same real field compresses
-markedly better at the same bound:
+**Corrected assessment.** The earlier claim that training the prior raised
+CR from 11.67× to 16.34× was **wrong**: it compared the old quantization
+(`Δ = bound/2`, max error 0.0125) against the new quantization
+(`Δ = 2·bound`, max error 0.05). The CR jump was entirely due to the
+quantization-step change, **not** the trained prior.
 
-| Metric | Random prior (baseline) | Trained prior (T039) |
-|--------|------------------------:|---------------------:|
-| Compressed | 2.11 MB | 1.51 MB |
-| **Compression ratio** | **11.67×** | **16.34×** |
-| Max abs error | 0.0125 ≤ 0.05 | 0.0500 ≤ 0.05 |
-| RMSE | 0.0072 | 0.0289 |
-| Encode / decode | 1.93 s / 2.19 s | 1.87 s / 1.77 s |
+Measured at the **same** quantization step (`Δ = 2·bound`), the random and
+trained priors give **identical CR**:
 
-The trained prior raises CR by ~40 % at the same bound (SC-008) with no
-change to the error-bound or mask guarantees (74 tests pass).
+| Bound | Random prior CR | Trained prior CR | Max error |
+|-------|----------------:|-----------------:|----------:|
+| 0.05  | 16.34× | 16.34× | 0.0500 ≤ 0.05 |
+| 0.01  | 11.07× | 11.07× | 0.0100 ≤ 0.01 |
+
+The trained prior provides **no CR benefit** at any bound. This is
+expected: the base prior only affects **cold-start cells** (the first
+valid cell of each scan region, ~10k of 2.02 M valid cells, 0.5 %), which
+contribute negligibly to residual entropy. The causal scan's weighted
+average dominates prediction.
+
+Moreover, the trained prior is **slightly worse** at cold-start prediction
+than the random prior:
+
+| Prior | Cold-start MAE | Cold-start RMSE |
+|-------|---------------:|----------------:|
+| Random | 15.70 | 18.56 |
+| Trained | 16.23 | 20.30 |
+
+The masked-cell training (loss 212→207 on the coarse grid) did not
+improve the prior's ability to predict actual wvpa values. **Conclusion:
+the trained prior adds no value and is not worth shipping as the default.**
+The quantization-step change (`Δ = 2·bound`) is the real CR driver and is
+already in place.
 
 ### Block-local causal predictor (T040–T043): experimental, opt-in
 

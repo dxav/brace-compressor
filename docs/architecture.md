@@ -225,19 +225,18 @@ the shape, so encode and decode still produce identical priors.
 
 ## 5. How it is trained — the honest answer
 
-**The transformer is now trained on HOAPS masked-cell prediction**
-(`scripts/train_prior.py`, T037). The shipped default weights
-(`src/hoaps_compressor/model/weights/prior_v3.hwpm`, `MODEL_VERSION=3`)
-are produced by self-supervised masked-cell prediction on the real HOAPS
-wvpa field: sample a mask, hide valid values, predict them from the
-6-channel context, loss = MSE (optionally Huber). Training runs on the
-same coarse grid (≤ 8192 tokens) the base prior uses at inference, so it
-is tractable and matches the inference resolution.
+**The default predictor uses a deterministic random initialization** (seed
+7). A training utility (`scripts/train_prior.py`, T037) can produce
+trained weights via self-supervised masked-cell prediction on HOAPS wvpa
+(sample a mask, hide valid values, predict them from the 6-channel
+context, loss = MSE/Huber), exported through `serialize_weights()` and
+loaded with `load_weights()`. Training runs on the same coarse grid
+(≤ 8192 tokens) the base prior uses at inference.
 
-- `TransformerPredictor.__init__` creates the network, calls
-  `_init_weights()` (deterministic random init, seed 7), then loads the
-  bundled default weights when present (`prior_v3.hwpm`). If the weights
-  file is absent, the deterministic random init is the fallback.
+- `TransformerPredictor.__init__` creates the network and calls
+  `_init_weights()` (deterministic random init, seed 7). It optionally
+  loads bundled trained weights when present, but the random init is the
+  default.
 - `_init_weights()` seeds a `torch.Generator` with `seed = 7` and draws
   `normal(0, 0.02)` for every weight tensor with `dim > 1`, zeros for
   biases, and **`out_scale = 1.0`** (non-zero, so the bounded output head
@@ -245,10 +244,16 @@ is tractable and matches the inference resolution.
 - The model is put in `eval()`; dropout is 0. Nothing is updated at
   inference.
 
-Training on historical HOAPS wvpa cuts residual entropy versus the random
-prior: measured CR on the real 28×320×720 field at bound 0.05 rises from
-**11.67× (random prior) to 16.34× (trained prior)** — a ~40 % gain
-(SC-008), with no change to the error-bound or mask guarantees.
+Training on historical HOAPS wvpa was expected to cut residual entropy
+versus the random prior, but **measured results show it does not**: at the
+same quantization step (`Δ = 2·bound`), the random and trained priors give
+**identical CR** (16.34× at bound 0.05, 11.07× at bound 0.01 on the real
+28×320×720 field). The base prior only affects cold-start cells (~0.5 % of
+valid cells), which contribute negligibly to residual entropy; the causal
+scan's weighted average dominates. The trained prior is also slightly
+*worse* at cold-start prediction (MAE 16.23 vs 15.70). **The trained prior
+adds no CR value and is not the default.** The real CR driver is the
+quantization step (`Δ = 2·bound`), which is independent of the prior.
 
 Everything downstream (quantizer, entropy coder, verify-and-repair) is
 indifferent to *how good* the prior is: a worse prior only means larger
