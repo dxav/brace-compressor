@@ -153,16 +153,89 @@ class TransformerPredictor:
     # state, predictions match bit-for-bit (research.md R5 determinism).
 
     def base_prior(self, mask: np.ndarray):
-        """Transformer spatial prior over the [0, 64] wvpa band (deterministic)."""
+        """Transformer spatial prior over the [0, 64] wvpa band (deterministic).
+
+        To keep self-attention tractable on large grids, the context is
+        first downsampled to a coarse grid (``max_prior_cells`` tokens),
+        the transformer runs on the coarse grid, and the result is
+        upsampled back to the full resolution. This preserves the smooth
+        spatial-prior role while bounding the O(N^2) attention cost.
+        """
         mask = np.asarray(mask, dtype=bool)
         t, lat, lon = mask.shape
-        ctx = self._context(mask)  # [T, lat, lon, 6]
+        coarse = self._coarse_shape((t, lat, lon))
+        if coarse == (t, lat, lon):
+            ctx = self._context(mask)
+            feats = torch.from_numpy(ctx.reshape(-1, 6))
+            pos = self._positional(feats.shape[0], self.model.d_model)
+            with torch.no_grad():
+                out = self.model(feats, pos).numpy().astype(np.float32)
+            base = (out + 1.0).reshape(t, lat, lon) * 32.0
+            return self._smooth(base)
+
+        # Downsample the mask to the coarse grid (block-mean of validity).
+        ct, clat, clon = coarse
+        m = (~mask).astype(np.float32)
+        # General block-mean that tolerates non-divisible edges.
+        m = self._block_mean(m, (t // ct, lat // clat, lon // clon))
+        coarse_mask = m < 0.5  # a coarse cell is "missing" if mostly missing
+        ctx = self._context(coarse_mask)
         feats = torch.from_numpy(ctx.reshape(-1, 6))
         pos = self._positional(feats.shape[0], self.model.d_model)
         with torch.no_grad():
             out = self.model(feats, pos).numpy().astype(np.float32)
-        base = (out + 1.0).reshape(t, lat, lon) * 32.0
+        coarse_base = (out + 1.0).reshape(ct, clat, clon) * 32.0
+        # Upsample back to full resolution (nearest-neighbour, deterministic).
+        # Use ceil factors and trim to the exact target size so non-divisible
+        # coarse grids still tile the full field.
+        fy = int(np.ceil(lat / clat))
+        fx = int(np.ceil(lon / clon))
+        base = np.repeat(np.repeat(coarse_base, fy, axis=1), fx, axis=2)
+        base = base[:, :lat, :lon]
         return self._smooth(base)
+
+    @staticmethod
+    def _block_mean(a: np.ndarray, block: tuple[int, int, int]) -> np.ndarray:
+        """Mean-pool ``a`` by ``block`` factors, tolerating non-divisible edges."""
+        t, lat, lon = a.shape
+        bt, bl, bo = block
+        out = np.empty((t // bt, lat // bl, lon // bo), dtype=np.float32)
+        for ti in range(t // bt):
+            for yi in range(lat // bl):
+                for xi in range(lon // bo):
+                    out[ti, yi, xi] = a[
+                        ti * bt : (ti + 1) * bt,
+                        yi * bl : (yi + 1) * bl,
+                        xi * bo : (xi + 1) * bo,
+                    ].mean()
+        return out
+
+    @staticmethod
+    def _coarse_shape(shape: tuple[int, int, int], max_cells: int = 8192) -> tuple[int, int, int]:
+        """Coarsest grid with <= max_cells tokens, keeping integer factors.
+
+        The prior is only a smooth cold-start hint for the causal scan, so
+        a coarse grid is sufficient. Returns the original shape if it
+        already fits within ``max_cells``.
+        """
+        t, lat, lon = shape
+        if t * lat * lon <= max_cells:
+            return shape
+        # Halve the largest dimension until under budget. Prefer reducing
+        # the spatial dims first (temporal correlation is handled by the
+        # causal scan), but fall back to time if needed.
+        dims = [t, lat, lon]
+        while dims[0] * dims[1] * dims[2] > max_cells:
+            # reduce the largest of (lat, lon) first, then time
+            if dims[1] >= dims[2] and dims[1] > 1:
+                dims[1] //= 2
+            elif dims[2] > 1:
+                dims[2] //= 2
+            elif dims[0] > 1:
+                dims[0] //= 2
+            else:
+                break
+        return (dims[0], dims[1], dims[2])
 
     @staticmethod
     def _smooth(field: np.ndarray, passes: int = 2) -> np.ndarray:

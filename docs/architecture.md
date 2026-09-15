@@ -210,6 +210,17 @@ For `N = T×H×W` cells it is a standard attention over N tokens:
 layers this is a few hundred MFLOPs for a 0.5 MB field — fast relative
 to the Python causal scan (see [performance.md](performance.md)).
 
+**Large-grid downsampling.** Because self-attention is O(N²), running
+the prior over a full HOAPS field (e.g. 28×320×720 = 6.45 M cells)
+would be intractable. `base_prior` therefore downsamples the mask to a
+coarse grid of at most `max_cells = 8192` tokens (`_coarse_shape`),
+runs the transformer on the coarse grid, and upsamples back with
+nearest-neighbour + the 3×3 smoothing. This keeps the prior's role as a
+smooth cold-start hint while bounding attention cost: on the real
+28×320×720 field the prior computes in ~0.5 s (vs. effectively infinite
+at full resolution). The coarse grid is derived deterministically from
+the shape, so encode and decode still produce identical priors.
+
 ---
 
 ## 5. How it is trained — the honest answer
