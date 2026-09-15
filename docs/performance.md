@@ -82,6 +82,28 @@ top-left 2, top-right 2, temporal 1)` in both the Python and Rust scans
 Residual symbol entropy drops from 5.70 to 5.44 bits/symbol. The Rust and
 Python paths remain byte-identical (verified).
 
+### Context-adaptive entropy coder (T048): +5.2 % CR
+
+The entropy stage was upgraded with a **context-adaptive rANS** mode
+(`MODE_CTX`). The residual symbols have strong conditional structure:
+the first-order conditional entropy is 4.84 bits/symbol vs 5.44
+unconditional. The new coder conditions each symbol's probability table
+on the previous symbol's magnitude bucket (small/medium/large), which
+exploits that structure. Measured on the real field:
+
+| Bound | Old CR (RANGE) | New CR (CTX) | Max error |
+|-------|---------------:|-------------:|----------:|
+| 0.01  | 11.07× | **12.45×** | 0.0100 ≤ 0.01 |
+| 0.02  | 13.70× | **14.34×** | 0.0200 ≤ 0.02 |
+| 0.05  | 17.03× | **17.91×** | 0.0500 ≤ 0.05 |
+| 0.1   | 20.37× | **21.74×** | 0.1000 ≤ 0.1 |
+
+The encoder builds both candidate payloads (RANGE and CTX) and emits the
+smaller; a cheap entropy-based pre-decision skips the RANGE build when
+CTX is clearly better. The CTX path is bit-exact (encode/decode
+identical) and preserves the hard error bound. Encode/decode timing on
+the real field: ~1.6 s / ~2.1 s (vs ~1.9 s / ~2.2 s before).
+
 ### Block-local causal predictor (T040–T043): experimental, opt-in
 
 A block-local causal attention predictor (`use_block_predictor=True`) is

@@ -430,22 +430,34 @@ header metrics (`max_abs_error ≤ bound_respected`).
 ### 7.3 Entropy coding (`model/entropy.py`) — bit-exact by requirement
 
 Residual symbols are compressed **losslessly** (needed so the decoder's
-state matches the encoder's simulation):
+state matches the encoder's simulation). The encoder builds two candidate
+payloads and emits the smaller:
 
-- Stream is cut into fixed blocks of **2048** symbols.
-- Each block independently picks the cheaper encoding:
+- **RANGE** (per-block RAW/RANGE): the stream is cut into fixed blocks of
+  **2048** symbols; each block independently picks the cheaper encoding:
   - `MODE_RAW` — two's-complement fixed width, width chosen per block
     from the block's min/max (1/2/4/8 bytes);
   - `MODE_RANGE` — zigzag map to unsigned, LEB128 varint, then **static
     rANS range coder**: one 256-entry frequency table normalized to
     2¹⁶ over the whole range-section, state machinery with
     `L = 2²³`, `SCALE = 16`. Symbols are encoded in reverse (rANS is a
-    stack) so decoding recovers the original order.
-- Per-block mode bytes, per-block varint byte counts, total symbol count,
-  the frequency table (varint-coded), and the rANS stream are framed
-  explicitly so decode is exact.
-- Repairs section: `u32 count`, then `(int64 position, float32 value)`
-  pairs.
+    stack) so decoding recovers the original order. The per-block mode
+    decision compares the *estimated rANS size* (not the varint size)
+    against raw packing, so predictable blocks go to RANGE.
+- **CTX** (T048, whole-stream context-adaptive rANS): all symbols are
+  coded in one rANS stream over the symbol alphabet `[min, max]`. Each
+  symbol's probability table is selected by the **previous symbol's
+  magnitude bucket** (small/medium/large). This exploits the measured
+  conditional entropy of the residuals (H(s|s_prev) = 4.84 vs H(s) =
+  5.44 bits/symbol on the real field). The decoder reproduces the context
+  sequence exactly because it decodes symbols in the same order. A cheap
+  entropy-based pre-decision skips the RANGE build when CTX is clearly
+  better.
+
+Per-block mode bytes, per-block varint byte counts, total symbol count,
+the frequency table (varint-coded), and the rANS stream are framed
+explicitly so decode is exact. Repairs section: `u32 count`, then
+`(int64 position, float32 value)` pairs.
 
 ---
 

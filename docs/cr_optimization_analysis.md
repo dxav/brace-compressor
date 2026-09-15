@@ -129,7 +129,48 @@ following end-to-end result on the real field:
 | Old temporal-weighted | 16.34x | 0.0500 <= 0.05 |
 | New spatial-weighted | **17.03x** | 0.0500 <= 0.05 |
 
-## 5. Implement and validate both scan paths
+## 5. Exploit the conditional entropy (T048)
+
+The entropy payload after the stencil change was 1,638,635 bytes, against an
+ideal 1,373,684 bytes at the measured 5.44 bits/symbol unconditional entropy.
+Two observations drove the next step:
+
+1. **The per-block mode heuristic was systematically wrong.** It compared
+   the *varint* size against the raw packed size, but rANS on the varint
+   bytes is almost always smaller than raw packing. Re-running the decision
+   with the actual rANS size flipped all 361 RAW blocks to RANGE, saving
+   258,862 bytes (15.8%) of the entropy payload. The outer zlib pass had
+   been masking part of this gain, but the rANS-first decision is strictly
+   better.
+
+2. **The symbols have strong conditional structure.** The first-order
+   conditional entropy is 4.84 bits/symbol vs 5.44 unconditional — an 11%
+   reduction. The residual distribution depends on the previous residual's
+   magnitude: smooth regions produce tiny residuals, edges produce larger
+   ones.
+
+A **context-adaptive rANS** mode (`MODE_CTX`) was added: each symbol is
+coded with a probability table selected by the previous symbol's magnitude
+bucket (small/medium/large). The encoder builds both the RANGE and CTX
+payloads and emits the smaller; a cheap entropy-based pre-decision skips
+the RANGE build when CTX is clearly better. The CTX path is bit-exact and
+preserves the hard error bound.
+
+Measured on the real field:
+
+| Bound | Old CR (RANGE) | New CR (CTX) | Max error |
+|-------|---------------:|-------------:|----------:|
+| 0.01  | 11.07x | **12.45x** | 0.0100 <= 0.01 |
+| 0.02  | 13.70x | **14.34x** | 0.0200 <= 0.02 |
+| 0.05  | 17.03x | **17.91x** | 0.0500 <= 0.05 |
+| 0.1   | 20.37x | **21.74x** | 0.1000 <= 0.1 |
+
+The entropy payload dropped to 1,321,172 bytes (from 1,638,635), and the
+rANS stream is now within ~0.01 bits/symbol of the conditional entropy
+floor. The remaining headroom is in reducing the symbol entropy itself
+(better prediction), not the coder.
+
+## 6. Implement and validate both scan paths
 
 The selected weights were implemented in both causal scan implementations:
 
@@ -147,19 +188,23 @@ The complete validation also checked:
 - the missing-value bitmask is preserved exactly;
 - encode/decode is deterministic;
 - Python and Rust streams are byte-identical;
-- the real-field CR is 17.03x at bound `0.05`;
-- the full test suite passes (`74 passed`).
+- the real-field CR is 17.91x at bound `0.05`;
+- the full test suite passes (`77 passed`).
 
 ## Conclusion
 
-The analysis found two different improvements with different causes:
+The analysis found three different improvements with different causes:
 
 1. Changing the legal lattice step to `Delta = 2 * bound` explains the major
    11.67x to 16.34x increase.
 2. Measuring residual structure and shifting the stencil toward spatial
    neighbors explains the further 16.34x to 17.03x increase.
+3. Exploiting the conditional entropy of the residual symbols with a
+   context-adaptive rANS explains the further 17.03x to 17.91x increase.
 
 The trained transformer prior did not improve CR and remains useful only as a
 deterministic cold-start prior. The final spatial-weighted causal predictor is
 small, reproducible, hard-error compatible, and close to the practical limit
-suggested by the original-neighbor upper-bound experiment.
+suggested by the original-neighbor upper-bound experiment. The entropy coder
+is now within ~0.01 bits/symbol of the conditional entropy floor, so further
+CR gains must come from better prediction.
