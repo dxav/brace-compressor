@@ -53,10 +53,10 @@ Intermediate artifact (transient, not persisted standalone).
 | Field | Type | Description |
 |-------|------|-------------|
 | `symbols` | integer array over valid positions | Signed indices into the quantum lattice for the residual `x − predictor(x)`. |
-| `step` | `float` | Quantization step Δ ≤ `error_bound` used to derive lattice spacing; recorded in container metadata for decode. |
+| `step` | `float` | Quantization step Δ = 2·`error_bound` used to derive lattice spacing; recorded in container metadata for decode. |
 | `lattice_origin` | `float` | Grid offset used by the quantizer; recorded in metadata. |
 
-**Rules**: chosen so that the *decoded* error including predictor error is within bound after repair: quantization alone bounds quantization error to Δ/2 per element; Predictor error is absorbed by the verify-and-repair loop (entity 5/6).
+**Rules**: chosen so that the *decoded* error including predictor error is within bound after repair: quantization alone bounds quantization error to Δ/2 = `error_bound` per element (the full budget); because the predictor is applied symmetrically at encode and decode, its error cancels out of the reconstruction. Predictor error is absorbed by the verify-and-repair loop (entity 5/6).
 
 ### 5. TransformerPredictor
 

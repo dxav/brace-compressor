@@ -97,8 +97,8 @@ The compression algorithm is based on a transformer model. The compressor uses a
 
 - **FR-001**: The system MUST accept a HOAPS wvpa dataset as input and produce a compressed representation that can be decompressed back into a wvpa dataset.
 - **FR-002**: The system MUST accept a user-specified absolute error bound that defines the maximum allowed absolute difference between each original and reconstructed value.
-- **FR-003**: The system MUST guarantee that, after decompression, every reconstructed value is within the specified absolute error bound of its original value. **Exception**: when the configured bound is zero (FR-017), this guarantee is explicitly exempted — output at bound 0 may still be lossy.
-- **FR-004**: The system MUST preserve missing values exactly: the missing-value mask after decompression MUST be identical to the original, and no value may change between valid and missing status.
+- **FR-003**: The system MUST guarantee that, after decompression, every reconstructed value is within the specified absolute error bound of its original value. **Exception**: when the configured bound is zero (FR-017), this guarantee is explicitly exempted — output at bound 0 may still be lossy. (FR-016 extends this with the adaptive-precision mechanism.)
+- **FR-004**: The system MUST preserve missing values exactly: the missing-value mask after decompression MUST be identical to the original, and no value may change between valid and missing status. (FR-015 specifies the storage mechanism.)
 - **FR-005**: The system MUST use a transformer-based model as the core of its compression algorithm. (Enforcement is completed by User Story 4; earlier stories may use simpler placeholders.)
 - **FR-006**: The system MUST produce a compressed representation that is smaller than the original uncompressed data for typical HOAPS wvpa inputs.
 - **FR-007**: The system MUST support configurable error bounds so users can trade off accuracy against compression ratio.
@@ -109,8 +109,8 @@ The compression algorithm is based on a transformer model. The compressor uses a
 - **FR-012**: The system MUST report the achieved compression ratio and confirm that the error bound was respected for each compression run.
 - **FR-013**: The system MUST exploit both spatial and temporal structure of the wvpa field, compressing across time steps to maximize the compression ratio at any given error bound.
 - **FR-014**: The system MUST expose its compression and decompression functionality through a Python library/API that implements the methods of the `numcodecs.Codec` class (e.g., `encode`, `decode`, `get_config`, `from_config`, `codec_id`), so it can be used as a drop-in codec in numcodecs-compatible pipelines.
-- **FR-015**: The system MUST store the missing-value mask separately as a compact bitmask alongside the compressed valid values, guaranteeing full (lossless) preservation of missing values while maximizing the compression ratio.
-- **FR-016**: The system MUST always guarantee the error bound (never violate it), adaptively increasing precision for hard-to-approximate regions (e.g., outliers) while maximizing the overall compression ratio. This guarantee inherits the FR-003 exemption when the bound is zero.
+- **FR-015**: The system MUST store the missing-value mask separately as a compact bitmask alongside the compressed valid values, guaranteeing full (lossless) preservation of missing values (per FR-004) while maximizing the compression ratio.
+- **FR-016**: The system MUST always guarantee the error bound (never violate it), adaptively increasing precision for hard-to-approximate regions (e.g., outliers) while maximizing the overall compression ratio. This is the mechanism that enforces FR-003 and inherits the FR-003 exemption when the bound is zero.
 - **FR-017**: The system MUST treat a user-requested error bound of zero as the tightest allowed bound (which may still be lossy), so that other bounds can maximize the compression ratio.
 - **FR-018**: The system MAY adopt techniques used in JPEG AI (learned/neural image compression) and attention mechanisms to maximize the compression ratio, provided the error bound and missing-value preservation guarantees are never violated.
 
@@ -133,6 +133,7 @@ The compression algorithm is based on a transformer model. The compressor uses a
 - **SC-005**: The compressor completes compression and decompression of a standard HOAPS wvpa field (about 1–50 MB uncompressed) in minutes (not hours) on a single machine — offline batch timing, no real-time requirement.
 - **SC-006**: Invalid error bounds (negative or non-finite) are rejected with a clear error message 100% of the time; a zero bound is accepted as the tightest allowed bound.
 - **SC-007**: At any given error bound, the compressor achieves a compression ratio at least as high as a spatial-only (per-field) baseline on the same data, demonstrating the benefit of exploiting temporal structure.
+- **SC-008**: With the intensive transformer/attention predictor active (plan.md Phase 8), the compressor achieves a strictly higher compression ratio than the pre-enhancement baseline at the same error bound on the same data, while preserving the error-bound and missing-value guarantees.
 
 ## Assumptions
 

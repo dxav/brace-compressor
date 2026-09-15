@@ -100,7 +100,7 @@ statistically — it can exceed any bound at any time. Here the neural
 network is used as a **predictor**, and the error path is controlled
 arithmetically:
 
-1. `Δ = error_bound / 2` (quant step) ⇒ quantization error ≤ `Δ/2 = bound/4`.
+1. `Δ = 2·error_bound` (quant step) ⇒ quantization error ≤ `Δ/2 = bound`. Because the predictor is applied symmetrically at encode and decode, its error cancels out of the reconstruction, so the total error is purely the residual's quantization error (≤ bound).
 2. The causal predictor captures the bulk of the value; residual entropy
    is small ⇒ high compression ratio.
 3. `verify_and_repair()` simulates decode and, if any cell still exceeds
@@ -373,8 +373,12 @@ active virtualenv. The Rust crate lives under `rust/hoaps_scan/`.
 
 ### 7.1 Quantization (`quant.py`)
 
-- `derive_step(bound) → Δ = bound / 2` ⇒ worst-case quantization error
-  `Δ/2 = bound/4`, leaving the rest of the budget as predictor headroom.
+- `derive_step(bound) → Δ = 2·bound` ⇒ worst-case quantization error
+  `Δ/2 = bound` — the full error budget. Because the predictor is applied
+  symmetrically at encode and decode, its error cancels out of the
+  reconstruction, so the total error is purely the residual's quantization
+  error (≤ bound). verify-and-repair remains as a safety net for rare
+  floating-point rounding that could push a value a hair over the bound.
 - Symbols are integers `q = floor((value − pred)/Δ + 0.5)` clamped to a
   symmetric int32-safe range; dequantization is `pred + q·Δ`.
 - `bound = 0` bypasses the lattice entirely (FR-003 exemption): raw
@@ -483,7 +487,7 @@ no GPU is required and none of the guarantees depend on device.
 ## 10. End-to-end data flow (worked example, bound = 0.05)
 
 1. `HoapsWvpaCodec(shape=(8, 90, 180), error_bound=0.05)` validates
-   inputs; Δ = 0.025.
+   inputs; Δ = 0.1.
 2. `encode(field)`: mask has ~15 % missing (land strip).
 3. `base_prior(mask)` → smooth prior (torch, ~0.1 s).
 4. Causal scan: for each of ~123 k valid cells, prediction from
@@ -491,7 +495,7 @@ no GPU is required and none of the guarantees depend on device.
    quantized with Δ; decode-state updated. Symbols are small integers
    concentrated near 0.
 5. `verify_and_repair` finds no violation at this bound
-   (`max_abs_error` ≈ 0.0125 ≤ 0.05); repair section empty.
+   (`max_abs_error` ≤ 0.05); repair section empty.
 6. Entropy coder: most 2048-symbol blocks take the rANS path; a handful
    of outlier-heavy blocks take RAW-8.
 7. Container: JSON header (~400 B) + mask bits (~16 kB) + entropy
@@ -505,7 +509,7 @@ no GPU is required and none of the guarantees depend on device.
 
 | Guarantee | Enforced by | Where |
 |---|---|---|
-| Absolute error bound (FR-003/FR-016) | step = bound/2 + verify-and-repair | `quant.py`, `verify.py`, invoked in `codec.encode` |
+| Absolute error bound (FR-003/FR-016) | step = 2·bound + verify-and-repair | `quant.py`, `verify.py`, invoked in `codec.encode` |
 | Mask bit-exactness (FR-004/FR-015) | separate bitpacked payload, lossless path | `mask.py`, `container.py` |
 | Encode/decode determinism (research R5) | mask-only deterministic predictor + identical causal walk | `transformer.py`, `codec.py` |
 | Byte-level compatibility (FR-014) | numcodecs ABC + JSON config + versioned container/model | `codec.py`, `container.py`, `transformer.py` |

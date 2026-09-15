@@ -78,7 +78,7 @@ tests/
 
 ---
 
-## Phase 2 (Enhancement): Intensive Transformer & Attention Prediction
+## Phase 8 (Enhancement): Intensive Transformer & Attention Prediction
 
 **Branch**: `001-hoaps-wvpa-attention` | **Date**: 2026-09-15
 
@@ -113,7 +113,7 @@ tests/
 
 ### Success criteria (this phase)
 
-- Compression ratio strictly higher than the current baseline at the same error bound on `data/wvpa_2020-08-01_07.npy`.
+- Compression ratio strictly higher than the current baseline at the same error bound on `data/wvpa_2020-08-01_07.npy` (SC-008).
 - Encode/decode remain bit-identical (deterministic predictor, identical causal walk).
 - Hard error bound and mask preservation guarantees unchanged (all existing tests still pass).
 

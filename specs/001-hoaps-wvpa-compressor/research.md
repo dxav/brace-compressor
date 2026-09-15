@@ -67,7 +67,7 @@ This document resolves the technical unknowns from the plan's Technical Context.
 
 ## R6. Quantization & entropy coding
 
-**Step size choice**: The quantization step Δ is derived from the bound: Δ ≤ bound (e.g., Δ = bound/2 with verify-and-repair safety margin), so any decoded value lies within bound of the original. Adaptive precision escalation applied per-element regions where the model residual exceeds the quantizer's reach.
+**Step size choice**: The quantization step Δ is derived from the bound as **Δ = 2·bound**, so per-element quantization error ≤ Δ/2 = bound — the full error budget. Because the predictor is applied symmetrically at encode and decode, its error cancels out of the reconstruction, so the total error is purely the residual's quantization error (≤ bound). verify-and-repair remains as a safety net for rare floating-point rounding that could push a value a hair over the bound. Adaptive precision escalation applied per-element regions where the model residual exceeds the quantizer's reach.
 
 **Entropy coder**: v1 ships a **bit-exact** entropy/coding stage: quantized residual symbols coded with a range coder (or bit-packed with per-block modes chosen by the encoder, e.g. raw/blocked-pass-through mode chosen per block by minimizing encoded size — always preserving exactness). Per-block mode selection maximizes CR while remaining exact.
 
