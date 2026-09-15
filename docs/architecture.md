@@ -225,55 +225,54 @@ the shape, so encode and decode still produce identical priors.
 
 ## 5. How it is trained — the honest answer
 
-**In v1 the transformer is not trained.** Its weights are a
-**deterministic random initialization** and are deliberately shipped
-frozen:
+**The transformer is now trained on HOAPS masked-cell prediction**
+(`scripts/train_prior.py`, T037). The shipped default weights
+(`src/hoaps_compressor/model/weights/prior_v3.hwpm`, `MODEL_VERSION=3`)
+are produced by self-supervised masked-cell prediction on the real HOAPS
+wvpa field: sample a mask, hide valid values, predict them from the
+6-channel context, loss = MSE (optionally Huber). Training runs on the
+same coarse grid (≤ 8192 tokens) the base prior uses at inference, so it
+is tractable and matches the inference resolution.
 
-- `TransformerPredictor.__init__` creates the network and calls
-  `_init_weights()` which seeds a `torch.Generator` with `seed = 7` and
-  draws:
-  - `normal(0, 0.02)` for every weight tensor with `dim > 1`
-    (projections, attention in/out, FFN),
-  - exact zeros for all biases and 1-D parameters.
-- The model is put in `eval()`; dropout is 0. Nothing is updated
-  afterwards.
+- `TransformerPredictor.__init__` creates the network, calls
+  `_init_weights()` (deterministic random init, seed 7), then loads the
+  bundled default weights when present (`prior_v3.hwpm`). If the weights
+  file is absent, the deterministic random init is the fallback.
+- `_init_weights()` seeds a `torch.Generator` with `seed = 7` and draws
+  `normal(0, 0.02)` for every weight tensor with `dim > 1`, zeros for
+  biases, and **`out_scale = 1.0`** (non-zero, so the bounded output head
+  is not collapsed to a constant field).
+- The model is put in `eval()`; dropout is 0. Nothing is updated at
+  inference.
 
-An untrained linear+attention network evaluated on smooth inputs
-still emits a **smooth random field**: layer defaults bias attention
-toward locality, the input projection of the diffusion/polar channels
-produces spatially correlated activations, and the final 3×3 smoothing
-enforces continuity. It therefore behaves as a *fixed, data-independent
-spatial prior* — enough to (a) give the causal scan a sensible cold
-start on the first valid cell of each region, and (b) satisfy the
-architectural requirement FR-005 ("transformer as the core").
+Training on historical HOAPS wvpa cuts residual entropy versus the random
+prior: measured CR on the real 28×320×720 field at bound 0.05 rises from
+**11.67× (random prior) to 16.34× (trained prior)** — a ~40 % gain
+(SC-008), with no change to the error-bound or mask guarantees.
 
 Everything downstream (quantizer, entropy coder, verify-and-repair) is
 indifferent to *how good* the prior is: a worse prior only means larger
 residuals, more entropy bits, maybe more repair rows — never a bound
 violation. More precisely, better prior ⇒ higher compression ratio, but
 the correctness guarantees are structurally independent of weights
-quality. This is why shipping untrained weights is safe.
+quality.
 
-### 5.1 Training path (planned / how it *would* work)
-
-The architecture was designed so that training can be dropped in
-without touching the codec:
+### 5.1 Training path (how it works)
 
 1. **Task**: self-supervised *masked-cell prediction* on real HOAPS wvpa
    slices — sample a mask, ask the network to predict the hidden valid
    values, loss `MSE(pred, value)` (optionally Huber). This matches the
    inference role exactly (mask → values) and requires no labels.
-2. **Inputs**: the same 6-channel context construction plus, optionally,
-   an extra value channel fed only from *previously predicted* slices
-   (teacher forcing on reconstruction state, still decode-consistent).
+2. **Inputs**: the same 6-channel context construction; the target is the
+   field normalized to the `[0, 64]` band the prior is rescaled to.
 3. **Data**: HOAPS wvpa NetCDF fields converted to float32 grids with
-   their native masks; augmentations: random mask patches (land strips,
-   holes), temporal shifts, per-field normalization by the field's
-   (transmitted) mean.
+   their native masks; `scripts/train_prior.py` downsamples to the coarse
+   grid (≤ 8192 tokens) for tractability, and falls back to a synthetic
+   smooth field when no real data is present.
 4. **Output**: optimized weights stored via `serialize_weights()`
    (magic `HWPM`, per-tensor shapes + float32 payloads) and loaded with
    `load_weights()`.
-5. **Versioning**: bump `MODEL_VERSION` (currently `2`) whenever
+5. **Versioning**: bump `MODEL_VERSION` (currently `3`) whenever
    weights/layout change. The version is written into every container
    header; decode refuses streams whose model version differs
    (`ValueError: model version mismatch`), so old streams remain
@@ -281,12 +280,6 @@ without touching the codec:
 6. **Determinism contract**: whatever the trained weights are, they are
    fixed at package build time; encode and decode import the same file
    — never network-fetched (research.md R9).
-
-Practical expectation: training on historical HOAPS wvpa should cut
-residual entropy roughly in half versus the random prior (prior error
-drops from O(field std) toward O(persistence error)), typically +20-40 %
-additional compression ratio on top of the current 4.5×, without any
-guarantee-relevant code change.
 
 ---
 
@@ -366,6 +359,38 @@ linearly and are far cheaper than the old Python scan.
 Build: the extension is built by `maturin` (see `pyproject.toml`
 `[tool.maturin]`); `maturin develop --release` installs it into the
 active virtualenv. The Rust crate lives under `rust/hoaps_scan/`.
+
+### 6.2 Block-local causal attention predictor (T040–T043, experimental)
+
+An alternative per-cell predictor that uses **attention over the
+already-reconstructed causal neighbors** within a block, instead of the
+fixed weighted average. It is exposed as `use_block_predictor=True` on
+`HoapsWvpaCodec` (opt-in, default off).
+
+- Valid cells are processed in causal blocks (default 256). For each
+  block, `TransformerPredictor.causal_block_predict` builds an 11-channel
+  feature per cell — 5 reconstructed-neighbor values (temporal parent,
+  left, top, top-left, top-right; 0 if absent) + the 6 mask-context
+  channels — projects them with a dedicated `block_in_proj`, adds
+  positional encodings, and runs the transformer encoder with a **causal
+  mask** so each cell attends only to earlier cells in the block.
+- The output is rescaled to the `[0, 64]` band and used as the per-cell
+  prediction; the residual is quantized and the decoder state updated
+  sequentially, exactly as in the standard scan.
+- **Decode-consistency**: it consumes only `recon_rows` (the decoder's
+  state), the mask, and positional encodings — never original values — so
+  encode and decode produce identical predictions (R5). The hard error
+  bound is unaffected (the predictor only sets the residual center;
+  verify-and-repair remains the final boundary).
+
+**Status (honest)**: correct and deterministic, but **experimental**.
+Its `block_in_proj` weights are untrained, so on smooth fields it
+predicts worse than the weighted average and lowers CR (e.g. 3.11× vs
+4.18× on the synthetic field). It also incurs a per-block transformer
+forward pass, which is slow on the full 6.45 M-cell field. It is opt-in
+and requires training of the block predictor head to be beneficial; the
+Rust port (T043) is deferred until a trained block predictor demonstrates
+a CR win.
 
 ---
 

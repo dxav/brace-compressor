@@ -17,12 +17,14 @@ def test_get_config_keys():
         "missing_value",
         "dtype",
         "outer_compress",
+        "use_block_predictor",
     }
     assert cfg["id"] == "hoaps-wvpa"
     assert cfg["shape"] == list(DEFAULT_SHAPE)
     assert cfg["error_bound"] == DEFAULT_BOUND
     assert cfg["missing_value"] == "nan"
     assert cfg["dtype"] == "float32"
+    assert cfg["use_block_predictor"] is False
 
 
 def test_config_json_serializable():

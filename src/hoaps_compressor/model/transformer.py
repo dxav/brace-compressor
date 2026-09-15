@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 import struct
+from pathlib import Path
 
 import numpy as np
 
@@ -33,9 +34,13 @@ try:  # torch import kept lazy-light for CPU-only usage
 except Exception:  # pragma: no cover - torch is a hard dep, but stay safe
     _TORCH = False
 
-MODEL_VERSION = 2  # bumped when weights/layout change (container header)
+MODEL_VERSION = 3  # bumped when weights/layout change (container header)
 MODEL_MAGIC = b"HWPM"
 _WEIGHTS_HEAD = struct.Struct("<4sI")  # magic, version
+
+# Optional bundled default weights (trained on HOAPS masked-cell prediction).
+# When present, TransformerPredictor loads them instead of the random init.
+_DEFAULT_WEIGHTS = Path(__file__).resolve().parent / "weights" / f"prior_v{MODEL_VERSION}.hwpm"
 
 
 class SpaceTimeTransformer(nn.Module if _TORCH else object):
@@ -55,6 +60,9 @@ class SpaceTimeTransformer(nn.Module if _TORCH else object):
         super().__init__()
         self.d_model = d_model
         self.in_proj = nn.Linear(6, d_model)
+        # Block-local causal predictor input projection: 5 reconstructed
+        # neighbor values + 6 mask-context channels = 11 features.
+        self.block_in_proj = nn.Linear(11, d_model)
         layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -82,6 +90,10 @@ class TransformerPredictor:
         self.seed = seed
         self.model = SpaceTimeTransformer()
         self._init_weights()
+        # Load bundled trained weights when present (deterministic, versioned);
+        # otherwise keep the deterministic random init as fallback.
+        if _DEFAULT_WEIGHTS.is_file():
+            self.load_weights(_DEFAULT_WEIGHTS.read_bytes())
 
     def _init_weights(self) -> None:
         g = torch.Generator().manual_seed(self.seed)
@@ -91,6 +103,9 @@ class TransformerPredictor:
             else:
                 nn.init.zeros_(p)
         nn.init.constant_(self.model.out_proj.bias, 0.0)
+        # out_scale must be non-zero so the bounded output head is not
+        # collapsed: tanh(0) = 0 would make the prior a constant field.
+        nn.init.constant_(self.model.out_scale, 1.0)
         self.model.eval()
 
     # -- context construction (mask-only; identical at encode/decode) ----
@@ -255,6 +270,89 @@ class TransformerPredictor:
                 + p[:, 1:-1, 1:-1]
             ) / 9.0
         return out.astype(np.float32)
+
+    # -- block-local causal attention predictor (T040) -------------------
+    #
+    # A decode-consistent per-cell predictor that uses attention over the
+    # already-reconstructed causal neighbors within a block. It consumes
+    # ONLY data the decoder also has: the missingness mask, the
+    # reconstructed neighbor values, and positional encodings. It never
+    # sees original field values, so encode and decode produce identical
+    # predictions (research.md R5 determinism).
+    #
+    # For each valid cell in a causal block, a feature vector is built
+    # from:
+    #   - the reconstructed temporal parent, left, top, top-left,
+    #     top-right neighbors (0.0 if absent / not yet reconstructed),
+    #   - the mask context (diffusion channels) for the cell,
+    #   - Fourier positional encodings.
+    # A small multi-head self-attention over the block (with a causal
+    # mask so a cell attends only to earlier cells) refines the
+    # prediction. The existing weighted-average predictor remains the
+    # fallback when the block has no reconstructed neighbors (cold start).
+
+    @staticmethod
+    def _neighbor_features(
+        recon_rows: np.ndarray, mask: np.ndarray, ti: int, yi: int, xi: int
+    ) -> np.ndarray:
+        """5 reconstructed-neighbor values for cell (ti, yi, xi) (0 if absent)."""
+        t, lat, lon = mask.shape
+        feats = np.zeros(5, dtype=np.float32)
+        if ti > 0 and not mask[ti - 1, yi, xi]:
+            feats[0] = recon_rows[(ti - 1) * lat + yi, xi]
+        if xi > 0 and not mask[ti, yi, xi - 1]:
+            feats[1] = recon_rows[ti * lat + yi, xi - 1]
+        if yi > 0 and not mask[ti, yi - 1, xi]:
+            feats[2] = recon_rows[ti * lat + (yi - 1), xi]
+        if yi > 0 and xi > 0 and not mask[ti, yi - 1, xi - 1]:
+            feats[3] = recon_rows[ti * lat + (yi - 1), xi - 1]
+        if yi > 0 and xi < lon - 1 and not mask[ti, yi - 1, xi + 1]:
+            feats[4] = recon_rows[ti * lat + (yi - 1), xi + 1]
+        return feats
+
+    def causal_block_predict(
+        self,
+        recon_rows: np.ndarray,
+        mask: np.ndarray,
+        cells: list[tuple[int, int, int]],
+        block_size: int = 256,
+    ) -> np.ndarray:
+        """Predict values for ``cells`` using block-local causal attention.
+
+        ``cells`` is an ordered list of (ti, yi, xi) valid cells in scan
+        order. Returns a float32 array of predictions, one per cell.
+
+        The block predictor is a lightweight learned refinement on top of
+        the reconstructed-neighbor features. It is deterministic and
+        decode-consistent: it consumes only ``recon_rows`` (the decoder's
+        state), ``mask``, and positional encodings.
+        """
+        if not _TORCH:  # pragma: no cover
+            raise RuntimeError("PyTorch is required for the transformer predictor")
+        if not cells:
+            return np.zeros(0, dtype=np.float32)
+        t, lat, lon = mask.shape
+        n = len(cells)
+        # Build per-cell features: 5 neighbor values + 6 mask-context channels.
+        ctx = self._context(mask)  # [T, lat, lon, 6]
+        feats = np.zeros((n, 11), dtype=np.float32)
+        for i, (ti, yi, xi) in enumerate(cells):
+            feats[i, :5] = self._neighbor_features(recon_rows, mask, ti, yi, xi)
+            feats[i, 5:] = ctx[ti, yi, xi]
+        # Normalize neighbor values to a stable range (wvpa band ~[0, 64]).
+        feats[:, :5] = feats[:, :5] / 64.0
+        x = torch.from_numpy(feats)
+        pos = self._positional(n, self.model.d_model)
+        # Project to d_model and add positional encodings.
+        h = self.model.block_in_proj(x) + pos
+        # Causal mask: cell i attends only to cells 0..i (already reconstructed).
+        causal = torch.triu(torch.ones(n, n, dtype=torch.bool), diagonal=1)
+        with torch.no_grad():
+            h = self.model.encoder(h, mask=causal)
+            out = self.model.out_proj(h).squeeze(-1) * torch.tanh(self.model.out_scale)
+        # Rescale to the [0, 64] band (mirrors base_prior).
+        pred = (out + 1.0).numpy().astype(np.float32) * 32.0
+        return pred
 
     # -- weight persistence (deterministic, versioned) --------------------
     def serialize_weights(self) -> bytes:

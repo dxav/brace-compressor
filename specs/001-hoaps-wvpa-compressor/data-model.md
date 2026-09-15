@@ -64,10 +64,11 @@ Space-time transformer (attention over spatial patches across time steps, JPEG A
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `weights` | versioned model parameters | Bundled with package; version recorded in container metadata (must match at decode). |
+| `weights` | versioned model parameters | Bundled with package (`src/hoaps_compressor/model/weights/prior_v3.hwpm`, `MODEL_VERSION=3`); version recorded in container metadata (must match at decode). |
 | `impl` | NVIDIA-free, CPU-first module | `src/hoaps_compressor/model/transformer.py`; CPU guarantee with optional GPU acceleration. |
+| `block_in_proj` | `nn.Linear(11, d_model)` | Dedicated input projection for the experimental block-local causal predictor (T040): 5 reconstructed-neighbor values + 6 mask-context channels. |
 
-**Rules**: deterministic for the recorded weights/versions; used at both encode and decode so predictor outputs agree bit-consistently on the same hardware paths. Weights incompatible with the recorded version → decode fails with clear error (stream ABI tied to model version).
+**Rules**: deterministic for the recorded weights/versions; used at both encode and decode so predictor outputs agree bit-consistently on the same hardware paths. Weights incompatible with the recorded version → decode fails with clear error (stream ABI tied to model version). The default weights are trained on HOAPS masked-cell prediction (`scripts/train_prior.py`); the deterministic random init is the fallback when the weights file is absent. The block-local causal predictor (`use_block_predictor=True`) is an opt-in experimental path that consumes only reconstructed neighbors + mask + positional encodings (decode-consistent); it is correct and deterministic but requires training of `block_in_proj` to improve CR.
 
 ### 6. RepairMap (verify-and-repair)
 

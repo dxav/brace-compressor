@@ -71,11 +71,13 @@ Returns, all JSON-serializable:
   "shape": [12, 180, 360],
   "error_bound": 0.01,
   "missing_value": "nan",
-  "dtype": "float32"
+  "dtype": "float32",
+  "outer_compress": true,
+  "use_block_predictor": false
 }
 ```
 
-`missing_value` may be a finite float (e.g. `9.96921e+36`, the NetCDF default fill) or the string `"nan"`.
+`missing_value` may be a finite float (e.g. `9.96921e+36`, the NetCDF default fill) or the string `"nan"`. `use_block_predictor` (default `false`) enables the experimental block-local causal attention predictor (T042); it is opt-in because it requires trained weights to improve CR.
 
 ### `from_config(config) -> HoapsWvpaCodec`
 

@@ -29,6 +29,37 @@ Downloaded from the ESIWACE object store, `wvpa` variable, fill value
 | Missing mask | identical (SC-002) |
 | Encode / decode | **1.93 s / 2.19 s** (13.4 MB/s) |
 
+### Enhancement phase (T039/T044): trained base prior + block-local causal predictor
+
+After training the transformer prior on HOAPS masked-cell prediction
+(`scripts/train_prior.py`, coarse grid ≤ 8192 tokens, `MODEL_VERSION=3`)
+and loading it as the default weights, the same real field compresses
+markedly better at the same bound:
+
+| Metric | Random prior (baseline) | Trained prior (T039) |
+|--------|------------------------:|---------------------:|
+| Compressed | 2.11 MB | 1.51 MB |
+| **Compression ratio** | **11.67×** | **16.34×** |
+| Max abs error | 0.0125 ≤ 0.05 | 0.0500 ≤ 0.05 |
+| RMSE | 0.0072 | 0.0289 |
+| Encode / decode | 1.93 s / 2.19 s | 1.87 s / 1.77 s |
+
+The trained prior raises CR by ~40 % at the same bound (SC-008) with no
+change to the error-bound or mask guarantees (74 tests pass).
+
+### Block-local causal predictor (T040–T043): experimental, opt-in
+
+A block-local causal attention predictor (`use_block_predictor=True`) is
+implemented and integrated into the causal scan. It is **correct and
+deterministic** (encode/decode bit-identical, hard bound preserved), but
+**currently experimental**: its `block_in_proj` weights are untrained, so
+on smooth fields it predicts worse than the fixed weighted average and
+lowers CR (e.g. 3.11× vs 4.18× on the synthetic field). It also incurs a
+per-block transformer forward pass, which is slow on the full 6.45 M-cell
+field. It is therefore **opt-in (default off)** and requires training of
+the block predictor head to be beneficial. The Rust port (T043) is
+deferred until the trained block predictor demonstrates a CR win.
+
 ## Interpretation vs SC-005
 
 - SC-005 requires a standard HOAPS wvpa field (~1–50 MB) to complete "in
