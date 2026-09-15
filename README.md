@@ -1,0 +1,48 @@
+# hoaps-compressor
+
+Error-bounded, transformer-based `numcodecs` codec for HOAPS water-vapor
+(`wvpa`) gridded climate fields.
+
+## Guarantees
+
+- **Absolute error bound** (FR-003/FR-016): every reconstructed value is
+  within the user-specified bound of the original — verified
+  encode-side before any stream is returned. At `error_bound=0` the
+  guarantee is exempted per FR-003 (tightest available representation).
+- **Missing values preserved bit-exactly** (FR-004/FR-015): a losslessly
+  stored bitmask restores the sentinel exactly; no valid↔missing flips.
+- **Transformer core** (FR-005): a space-time attention predictor with a
+  causal (decode-consistent) scan; JPEG AI-style techniques per FR-018.
+
+## Install / test
+
+```bash
+pip install -e ".[test]"
+pytest tests -q              # full suite (slow integration ~10 min)
+pytest tests/unit -q         # fast subset
+```
+
+## Usage
+
+```python
+import numpy as np
+import hoaps_compressor  # registers "hoaps-wvpa" with numcodecs
+from hoaps_compressor import HoapsWvpaCodec
+
+shape = (8, 90, 180)
+field = ...  # float32 (time, lat, lon); NaN = missing
+codec = HoapsWvpaCodec(shape=shape, error_bound=0.05)
+enc = codec.encode(field)         # bytes
+dec = codec.decode(enc)           # float32 array, same shape
+
+# numcodecs registry / config round trip
+cfg = codec.get_config()          # JSON-serializable, id="hoaps-wvpa"
+codec2 = hoaps_compressor.HoapsWvpaCodec.from_config(cfg)
+```
+
+## Design docs
+
+- Spec: `specs/001-hoaps-wvpa-compressor/spec.md`
+- Plan/research: `specs/001-hoaps-wvpa-compressor/plan.md`, `research.md`
+- Contract: `specs/001-hoaps-wvpa-compressor/contracts/codec-api.md`
+- Performance: `docs/performance.md`

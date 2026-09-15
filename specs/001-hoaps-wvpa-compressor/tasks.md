@@ -29,9 +29,9 @@ description: "Task list for HOAPS WVPA Transformer Compressor implementation"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project scaffolding: `pyproject.toml` (name `hoaps-compressor`, Python >=3.11, deps: numcodecs>=0.12, numpy, torch (CPU)), `src/hoaps_compressor/__init__.py`, `tests/` dirs (`tests/contract/`, `tests/unit/`, `tests/integration/`), and `pytest.ini`/`conftest.py`
-- [ ] T002 Finalize `src/hoaps_compressor/__init__.py` to expose `HoapsWvpaCodec` and auto-register it via `numcodecs.registry.register_codec(HoapsWvpaCodec)` on import (codec class itself arrives with T011; use a temporary stub if needed so import succeeds)
-- [ ] T003 Add `pyproject.toml` `[project.optional-dependencies] test = ["pytest", "hypothesis"]` and a `[tool.pytest.ini_options]` section
+- [x] T001 Create project scaffolding: `pyproject.toml` (name `hoaps-compressor`, Python >=3.11, deps: numcodecs>=0.12, numpy, torch (CPU)), `src/hoaps_compressor/__init__.py`, `tests/` dirs (`tests/contract/`, `tests/unit/`, `tests/integration/`), and `pytest.ini`/`conftest.py`
+- [x] T002 Finalize `src/hoaps_compressor/__init__.py` to expose `HoapsWvpaCodec` and auto-register it via `numcodecs.registry.register_codec(HoapsWvpaCodec)` on import (codec class itself arrives with T011; use a temporary stub if needed so import succeeds)
+- [x] T003 Add `pyproject.toml` `[project.optional-dependencies] test = ["pytest", "hypothesis"]` and a `[tool.pytest.ini_options]` section
 
 ---
 
@@ -41,11 +41,11 @@ description: "Task list for HOAPS WVPA Transformer Compressor implementation"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Create `src/hoaps_compressor/bound.py` implementing error-bound validation: `validate_error_bound(value)` MUST raise `ValueError` when `value < 0` or non-finite (per FR-008); `0.0` is valid (tightest allowed bound, FR-017)
-- [ ] T005 [P] Create `src/hoaps_compressor/mask.py` implementing missing-value mask: `extract_mask(values, missing_value)` returns bool array (`True`=missing) where element equals `missing_value` (or `np.isnan` when `missing_value="nan"`); `pack_mask(mask)` → bitpacked bytes (`ceil(N/8)` bytes); `unpack_mask(packed, n)` → bool array; MUST be bit-exact round-trip (FR-004/FR-015)
-- [ ] T006 [P] Create `src/hoaps_compressor/container.py` implementing the EncodedStream container framing per contracts/codec-api.md §3: magic `"HWPC"`, container version uint16=1, flags uint16, model version uint32, header-extra length uint32 + JSON header-extra, mask payload length uint64 + payload, residual payload length uint64 + payload, CRC-32 over all preceding bytes; `write_container(...)` and `read_container(buf)` with validation (bad magic/version/checksum → `ValueError`)
-- [ ] T007 [P] Create `src/hoaps_compressor/quant.py` implementing residual quantization: `derive_step(error_bound)` returns step Δ ≤ `error_bound`; `quantize(residual, step, origin)` → integer symbols; `dequantize(symbols, step, origin)` → floats; quantization error bounded by Δ/2 per element
-- [ ] T008 [P] Create `src/hoaps_compressor/verify.py` implementing the verify-and-repair loop: `verify_and_repair(orig_valid, decoded_valid, error_bound)` returns `(repaired_symbols, repair_map, max_abs_error)`; MUST escalate precision (finer quantum → exact float32 correction) for any element where `|decoded - orig| > error_bound` and loop until zero violations (FR-003/FR-016); returns `max_abs_error` for FR-012 metrics
+- [x] T004 Create `src/hoaps_compressor/bound.py` implementing error-bound validation: `validate_error_bound(value)` MUST raise `ValueError` when `value < 0` or non-finite (per FR-008); `0.0` is valid (tightest allowed bound, FR-017)
+- [x] T005 [P] Create `src/hoaps_compressor/mask.py` implementing missing-value mask: `extract_mask(values, missing_value)` returns bool array (`True`=missing) where element equals `missing_value` (or `np.isnan` when `missing_value="nan"`); `pack_mask(mask)` → bitpacked bytes (`ceil(N/8)` bytes); `unpack_mask(packed, n)` → bool array; MUST be bit-exact round-trip (FR-004/FR-015)
+- [x] T006 [P] Create `src/hoaps_compressor/container.py` implementing the EncodedStream container framing per contracts/codec-api.md §3: magic `"HWPC"`, container version uint16=1, flags uint16, model version uint32, header-extra length uint32 + JSON header-extra, mask payload length uint64 + payload, residual payload length uint64 + payload, CRC-32 over all preceding bytes; `write_container(...)` and `read_container(buf)` with validation (bad magic/version/checksum → `ValueError`)
+- [x] T007 [P] Create `src/hoaps_compressor/quant.py` implementing residual quantization: `derive_step(error_bound)` returns step Δ ≤ `error_bound`; `quantize(residual, step, origin)` → integer symbols; `dequantize(symbols, step, origin)` → floats; quantization error bounded by Δ/2 per element
+- [x] T008 [P] Create `src/hoaps_compressor/verify.py` implementing the verify-and-repair loop: `verify_and_repair(orig_valid, decoded_valid, error_bound)` returns `(repaired_symbols, repair_map, max_abs_error)`; MUST escalate precision (finer quantum → exact float32 correction) for any element where `|decoded - orig| > error_bound` and loop until zero violations (FR-003/FR-016); returns `max_abs_error` for FR-012 metrics
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -61,15 +61,15 @@ description: "Task list for HOAPS WVPA Transformer Compressor implementation"
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T009 [P] [US1] Contract test for `HoapsWvpaCodec.encode`/`decode` buffer contract (incl. `out=` param) in `tests/contract/test_codec_contract.py`
-- [ ] T010 [P] [US1] Integration test: bounded round trip on synthetic smooth field asserting `max(|dec-orig|) <= error_bound` and `len(enc) <= 0.5 * orig.nbytes` (SC-003, ≥50% smaller) in `tests/integration/test_error_bound.py`
+- [x] T009 [P] [US1] Contract test for `HoapsWvpaCodec.encode`/`decode` buffer contract (incl. `out=` param) in `tests/contract/test_codec_contract.py`
+- [x] T010 [P] [US1] Integration test: bounded round trip on synthetic smooth field asserting `max(|dec-orig|) <= error_bound` and `len(enc) <= 0.5 * orig.nbytes` (SC-003, ≥50% smaller) in `tests/integration/test_error_bound.py`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [P] [US1] Create `src/hoaps_compressor/codec.py` defining `HoapsWvpaCodec(numcodecs.abc.Codec)` with `codec_id = "hoaps-wvpa"`, constructor `(shape, error_bound, missing_value="nan", dtype="float32")` validating per contracts/codec-api.md §1 (negative/non-finite bound → `ValueError`; `shape` 3 positive ints; `dtype` must be `"float32"`)
-- [ ] T012 [US1] Implement `HoapsWvpaCodec.encode(buf)` in `src/hoaps_compressor/codec.py`: validate buffer size == `4*prod(shape)` and C-contiguous (else `ValueError`); extract mask (T005); predict valid values (placeholder predictor, transformer arrives in US4); quantize residuals (T007) — when `error_bound == 0`, skip verify-and-repair (exempt per FR-003) and use tightest available representation; entropy-code (placeholder in US4); run verify-and-repair (T008) when bound > 0; frame container (T006); return bytes
-- [ ] T013 [US1] Implement `HoapsWvpaCodec.decode(buf, out=None)` in `src/hoaps_compressor/codec.py`: validate header/checksum (T006); restore mask bit-exactly; entropy-decode + dequantize residuals; write sentinel into missing positions; honor `out=` (must be exactly `4*prod(shape)` bytes else `ValueError`); return float32 array of configured `shape`
-- [ ] T014 [US1] Add FR-012 metrics to encode in `src/hoaps_compressor/codec.py`: record `max_abs_error` (verified ≤ bound), `n_repaired`, `uncompressed_size`, `compressed_size`, `cr` in header-extra JSON per contracts/codec-api.md §5
+- [x] T011 [P] [US1] Create `src/hoaps_compressor/codec.py` defining `HoapsWvpaCodec(numcodecs.abc.Codec)` with `codec_id = "hoaps-wvpa"`, constructor `(shape, error_bound, missing_value="nan", dtype="float32")` validating per contracts/codec-api.md §1 (negative/non-finite bound → `ValueError`; `shape` 3 positive ints; `dtype` must be `"float32"`)
+- [x] T012 [US1] Implement `HoapsWvpaCodec.encode(buf)` in `src/hoaps_compressor/codec.py`: validate buffer size == `4*prod(shape)` and C-contiguous (else `ValueError`); extract mask (T005); predict valid values (placeholder predictor, transformer arrives in US4); quantize residuals (T007) — when `error_bound == 0`, skip verify-and-repair (exempt per FR-003) and use tightest available representation; entropy-code (placeholder in US4); run verify-and-repair (T008) when bound > 0; frame container (T006); return bytes
+- [x] T013 [US1] Implement `HoapsWvpaCodec.decode(buf, out=None)` in `src/hoaps_compressor/codec.py`: validate header/checksum (T006); restore mask bit-exactly; entropy-decode + dequantize residuals; write sentinel into missing positions; honor `out=` (must be exactly `4*prod(shape)` bytes else `ValueError`); return float32 array of configured `shape`
+- [x] T014 [US1] Add FR-012 metrics to encode in `src/hoaps_compressor/codec.py`: record `max_abs_error` (verified ≤ bound), `n_repaired`, `uncompressed_size`, `compressed_size`, `cr` in header-extra JSON per contracts/codec-api.md §5
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -83,14 +83,14 @@ description: "Task list for HOAPS WVPA Transformer Compressor implementation"
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T015 [P] [US2] Unit test for mask bitpacking fidelity (round-trip, all-missing, no-missing, land-strip masks) in `tests/unit/test_mask.py`
-- [ ] T016 [P] [US2] Integration test: mask identity + no valid↔missing conversion on fields with missing values in `tests/integration/test_missing_values.py`
+- [x] T015 [P] [US2] Unit test for mask bitpacking fidelity (round-trip, all-missing, no-missing, land-strip masks) in `tests/unit/test_mask.py`
+- [x] T016 [P] [US2] Integration test: mask identity + no valid↔missing conversion on fields with missing values in `tests/integration/test_missing_values.py`
 
 ### Implementation for User Story 2
 
-- [ ] T017 [P] [US2] Wire mask payload into container encode/decode in `src/hoaps_compressor/container.py`: store bitpacked mask losslessly; when all elements missing, write empty residual payload (no value payload) per data-model.md `MissingMask` state transitions
-- [ ] T018 [US2] Handle all-missing and no-valid-value inputs in `src/hoaps_compressor/codec.py`: all-missing → mask all-True, empty residual payload, valid decompressible output (FR-009/FR-010); stray non-finite values not matching sentinel treated as missing and counted (FR-011)
-- [ ] T019 [US2] Ensure decode restores sentinel exactly into missing positions in `src/hoaps_compressor/codec.py` (no valid value converted to missing and vice versa, FR-004)
+- [x] T017 [P] [US2] Wire mask payload into container encode/decode in `src/hoaps_compressor/container.py`: store bitpacked mask losslessly; when all elements missing, write empty residual payload (no value payload) per data-model.md `MissingMask` state transitions
+- [x] T018 [US2] Handle all-missing and no-valid-value inputs in `src/hoaps_compressor/codec.py`: all-missing → mask all-True, empty residual payload, valid decompressible output (FR-009/FR-010); stray non-finite values not matching sentinel treated as missing and counted (FR-011)
+- [x] T019 [US2] Ensure decode restores sentinel exactly into missing positions in `src/hoaps_compressor/codec.py` (no valid value converted to missing and vice versa, FR-004)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -104,14 +104,14 @@ description: "Task list for HOAPS WVPA Transformer Compressor implementation"
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T020 [P] [US3] Contract test for `get_config`/`from_config` round-trip and JSON-serializability (incl. `"id"` field) in `tests/contract/test_config.py`
-- [ ] T021 [P] [US3] Integration test: bound sweep (e.g. 0.01/0.05/0.2) asserting bound respected (bound > 0) and CR monotonicity, with the reference bound yielding `len(enc) <= 0.5 * orig.nbytes` (SC-003) in `tests/integration/test_configurable_bound.py`
+- [x] T020 [P] [US3] Contract test for `get_config`/`from_config` round-trip and JSON-serializability (incl. `"id"` field) in `tests/contract/test_config.py`
+- [x] T021 [P] [US3] Integration test: bound sweep (e.g. 0.01/0.05/0.2) asserting bound respected (bound > 0) and CR monotonicity, with the reference bound yielding `len(enc) <= 0.5 * orig.nbytes` (SC-003) in `tests/integration/test_configurable_bound.py`
 
 ### Implementation for User Story 3
 
-- [ ] T022 [P] [US3] Implement `get_config()` and `from_config(config)` in `src/hoaps_compressor/codec.py` per contracts/codec-api.md §2: JSON-serializable dict with `"id": "hoaps-wvpa"`, `shape`, `error_bound`, `missing_value`, `dtype`; `from_config` validates `"id"` and reconstructs behaviorally-identical codec
-- [ ] T023 [US3] Ensure quantization step derives from the configured bound in `src/hoaps_compressor/quant.py` (`derive_step(error_bound)` with step ≤ bound) so each bound is honored and looser bounds yield smaller residuals (SC-004)
-- [ ] T024 [US3] Add bound validation coverage in `src/hoaps_compressor/bound.py` for `error_bound=0.0` accepted as tightest allowed bound (FR-017/SC-006)
+- [x] T022 [P] [US3] Implement `get_config()` and `from_config(config)` in `src/hoaps_compressor/codec.py` per contracts/codec-api.md §2: JSON-serializable dict with `"id": "hoaps-wvpa"`, `shape`, `error_bound`, `missing_value`, `dtype`; `from_config` validates `"id"` and reconstructs behaviorally-identical codec
+- [x] T023 [US3] Ensure quantization step derives from the configured bound in `src/hoaps_compressor/quant.py` (`derive_step(error_bound)` with step ≤ bound) so each bound is honored and looser bounds yield smaller residuals (SC-004)
+- [x] T024 [US3] Add bound validation coverage in `src/hoaps_compressor/bound.py` for `error_bound=0.0` accepted as tightest allowed bound (FR-017/SC-006)
 
 **Checkpoint**: At this point, User Stories 1, 2 AND 3 should all work independently
 
@@ -125,15 +125,15 @@ description: "Task list for HOAPS WVPA Transformer Compressor implementation"
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T025 [P] [US4] Unit test for transformer predictor determinism (same weights → same output) in `tests/unit/test_transformer.py`
-- [ ] T026 [P] [US4] Integration test: space-time CR ≥ spatial-only baseline at equal bound in `tests/integration/test_space_time_cr.py`
+- [x] T025 [P] [US4] Unit test for transformer predictor determinism (same weights → same output) in `tests/unit/test_transformer.py`
+- [x] T026 [P] [US4] Integration test: space-time CR ≥ spatial-only baseline at equal bound in `tests/integration/test_space_time_cr.py`
 
 ### Implementation for User Story 4
 
-- [ ] T027 [P] [US4] Create `src/hoaps_compressor/model/transformer.py` implementing a space-time transformer predictor (attention over spatial patches across time steps, JPEG AI-inspired transform/attention blocks) predicting values/residuals from neighboring valid data; deterministic for bundled versioned weights (FR-005, FR-018)
-- [ ] T028 [P] [US4] Create `src/hoaps_compressor/model/entropy.py` implementing a bit-exact entropy coder: per-block mode selection (`RAW`/`RANGE_CODED`/`PASSTHROUGH`) chosen at encode to minimize encoded size; MUST be lossless so decode reproduces quantized symbols exactly (research.md R6)
-- [ ] T029 [US4] Integrate transformer predictor (T027) and entropy coder (T028) into `src/hoaps_compressor/codec.py` encode/decode paths, replacing placeholders from US1; record model version in container header (T006) and validate on decode (mismatch → `ValueError`)
-- [ ] T030 [US4] Add optional outer lossless compression of payloads (container `flags` bit0) in `src/hoaps_compressor/container.py` to maximize CR without touching guarantees (FR-018)
+- [x] T027 [P] [US4] Create `src/hoaps_compressor/model/transformer.py` implementing a space-time transformer predictor (attention over spatial patches across time steps, JPEG AI-inspired transform/attention blocks) predicting values/residuals from neighboring valid data; deterministic for bundled versioned weights (FR-005, FR-018)
+- [x] T028 [P] [US4] Create `src/hoaps_compressor/model/entropy.py` implementing a bit-exact entropy coder: per-block mode selection (`RAW`/`RANGE_CODED`/`PASSTHROUGH`) chosen at encode to minimize encoded size; MUST be lossless so decode reproduces quantized symbols exactly (research.md R6)
+- [x] T029 [US4] Integrate transformer predictor (T027) and entropy coder (T028) into `src/hoaps_compressor/codec.py` encode/decode paths, replacing placeholders from US1; record model version in container header (T006) and validate on decode (mismatch → `ValueError`)
+- [x] T030 [US4] Add optional outer lossless compression of payloads (container `flags` bit0) in `src/hoaps_compressor/container.py` to maximize CR without touching guarantees (FR-018)
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -143,11 +143,11 @@ description: "Task list for HOAPS WVPA Transformer Compressor implementation"
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T031 [P] Add unit tests for `bound.py` (negative/non-finite/zero) and `quant.py` (step derivation, quantization error ≤ Δ/2) in `tests/unit/test_bound.py`, `tests/unit/test_quant.py`
-- [ ] T032 [P] Add container framing/versioning/checksum unit tests in `tests/unit/test_container.py`
-- [ ] T033 Run `quickstart.md` validation scenarios end-to-end (Scenarios 1–5) and confirm all assertions pass
-- [ ] T034 Code cleanup and refactoring across `src/hoaps_compressor/` (consistent error messages, docstrings)
-- [ ] T035 Performance sanity check: encode/decode of a ~1–50 MB synthetic field completes in minutes on CPU (SC-005); document measured times in `docs/performance.md`
+- [x] T031 [P] Add unit tests for `bound.py` (negative/non-finite/zero) and `quant.py` (step derivation, quantization error ≤ Δ/2) in `tests/unit/test_bound.py`, `tests/unit/test_quant.py`
+- [x] T032 [P] Add container framing/versioning/checksum unit tests in `tests/unit/test_container.py`
+- [x] T033 Run `quickstart.md` validation scenarios end-to-end (Scenarios 1–5) and confirm all assertions pass
+- [x] T034 Code cleanup and refactoring across `src/hoaps_compressor/` (consistent error messages, docstrings)
+- [x] T035 Performance sanity check: encode/decode of a ~1–50 MB synthetic field completes in minutes on CPU (SC-005); document measured times in `docs/performance.md`
 
 ---
 

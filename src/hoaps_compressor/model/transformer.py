@@ -140,40 +140,29 @@ class TransformerPredictor:
         pos[:, 1::2] = np.cos(position * div[: (d_model // 2)])
         return torch.from_numpy(pos)
 
-    def predict(self, mask: np.ndarray) -> np.ndarray:
-        """Predict values for every cell given only the mask (deterministic).
+    # -- causal (encode/decode-consistent) prediction ---------------------
+    #
+    # The predictor exposes two synchronised building blocks the codec
+    # calls in identical order at encode and decode:
+    #
+    #   base_prior(mask)         -> transformer spatial prior [T, lat, lon]
+    #   causal_predict(...)      -> per-cell prediction from already
+    #                               reconstructed causal neighbors + prior
+    #
+    # Because both sides walk the same scan with the same reconstructed
+    # state, predictions match bit-for-bit (research.md R5 determinism).
 
-        Sequential temporal scheme (decode-compatible): slice 0 uses the
-        wave/prior base field; each later slice is initialized from the
-        previous *predicted* slice (persistence), so encode and decode
-        produce identical values without ever reading original data. The
-        transformer refines the base field spatially (JPEG AI-style learned
-        prior over the mask-diffusion context).
-        """
+    def base_prior(self, mask: np.ndarray):
+        """Transformer spatial prior over the [0, 64] wvpa band (deterministic)."""
         mask = np.asarray(mask, dtype=bool)
         t, lat, lon = mask.shape
-
-        # --- Spatial learned prior from the mask context (transformer) ---
-        ctx = self._context(mask)          # [T, lat, lon, 6]
+        ctx = self._context(mask)  # [T, lat, lon, 6]
         feats = torch.from_numpy(ctx.reshape(-1, 6))
         pos = self._positional(feats.shape[0], self.model.d_model)
         with torch.no_grad():
             out = self.model(feats, pos).numpy().astype(np.float32)
-        base = (out + 1.0).reshape(t, lat, lon) * 32.0  # [0, 64] physical band
-        # Smooth the learned base with a spatial convolution (denoising of
-        # the random-init latent; keeps determinism).
-        base = self._smooth(base)
-
-        # --- Sequential temporal persistence (identical at decode) ------
-        # Slice ti is predicted from the previous *predicted* slice where
-        # that slice was valid; where the previous slice was missing (no
-        # trustworthy persistence source) the base prior is used instead.
-        prediction = np.empty((t, lat, lon), dtype=np.float32)
-        prediction[0] = base[0]
-        for ti in range(1, t):
-            prev_missing = mask[ti - 1]
-            prediction[ti] = np.where(prev_missing, base[ti], prediction[ti - 1])
-        return prediction
+        base = (out + 1.0).reshape(t, lat, lon) * 32.0
+        return self._smooth(base)
 
     @staticmethod
     def _smooth(field: np.ndarray, passes: int = 2) -> np.ndarray:

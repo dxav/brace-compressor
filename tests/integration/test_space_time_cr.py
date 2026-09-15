@@ -12,8 +12,8 @@ def test_transformer_determinism():
     pred = TransformerPredictor()
     mask = np.zeros(DEFAULT_SHAPE, dtype=bool)
     mask[:, :2, :] = True
-    p1 = pred.predict(mask)
-    p2 = pred.predict(mask)
+    p1 = pred.base_prior(mask)
+    p2 = pred.base_prior(mask)
     np.testing.assert_array_equal(p1, p2)  # same weights -> same output
 
 
@@ -22,8 +22,8 @@ def test_transformer_ignores_field_values():
     pred = TransformerPredictor()
     mask = np.zeros((2, 4, 4), dtype=bool)
     mask[0, 0, 0] = True
-    a = pred.predict(mask)
-    b = pred.predict(mask.copy())
+    a = pred.base_prior(mask)
+    b = pred.base_prior(mask.copy())
     np.testing.assert_array_equal(a, b)
 
 
@@ -34,7 +34,7 @@ def test_model_weights_serialize_roundtrip():
     pred2.load_weights(blob)
     mask = np.zeros((1, 3, 3), dtype=bool)
     np.testing.assert_allclose(
-        pred.predict(mask), pred2.predict(mask), rtol=0, atol=0
+        pred.base_prior(mask), pred2.base_prior(mask), rtol=0, atol=0
     )
 
 

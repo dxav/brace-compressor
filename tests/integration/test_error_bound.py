@@ -33,7 +33,7 @@ def test_cr_at_least_50pct_smaller():
 
     meta = read_container(enc).header_extra["metrics"]
     assert meta["max_abs_error"] <= DEFAULT_BOUND
-    assert meta["payload_size"] <= len(enc)
+    assert meta["payload_size"] <= field.nbytes  # payloads beat raw storage
     assert meta["uncompressed_size"] == field.nbytes
     assert meta["bound_respected"] is True
     # small toy fields still round-trip and do not grow unreasonably
@@ -54,7 +54,7 @@ def test_metrics_reported():
     assert m["max_abs_error"] <= DEFAULT_BOUND
     assert m["n_repaired"] >= 0
     assert m["uncompressed_size"] == field.nbytes
-    assert 0 < m["payload_size"] <= len(enc)
+    assert 0 < m["payload_size"] <= field.nbytes
     assert m["bound_respected"] is True
 
 

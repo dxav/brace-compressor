@@ -9,6 +9,7 @@ bound == 0 per the FR-003 exemption) -> frame container.
 
 from __future__ import annotations
 
+import math
 import struct
 
 import numpy as np
@@ -20,7 +21,7 @@ from .model.entropy import decode_symbols, pack_repairs, unpack_repairs
 from .model.entropy import encode_symbols as _entropy_encode
 from .model.transformer import MODEL_VERSION as TRANSFORMER_MODEL_VERSION
 from .model.transformer import TransformerPredictor
-from .quant import dequantize, derive_step, quantize
+from .quant import derive_step
 from .verify import verify_and_repair
 
 MODEL_VERSION = TRANSFORMER_MODEL_VERSION
@@ -128,15 +129,11 @@ class HoapsWvpaCodec:
         valid_values = field[~mask].astype(np.float32)
         n_valid = int(valid_values.size)
 
-        # --- Prediction: transformer sees only the mask ------------------
-        prediction = self._predictor.predict(mask)
-        pred_valid = prediction[~mask].astype(np.float32)
-        residuals = valid_values.astype(np.float64) - pred_valid.astype(np.float64)
-
-        # --- Quantization + verify-and-repair ----------------------------
+        t, lat, lon = self.shape
         bound = self.error_bound
         repair_positions = np.zeros(0, dtype=np.int64)
         repair_values = np.zeros(0, dtype=np.float32)
+
         if bound == 0.0:
             # FR-003 exemption: tightest available representation = raw bits.
             step = 0.0
@@ -146,13 +143,13 @@ class HoapsWvpaCodec:
             max_abs_error = 0.0
         else:
             step = derive_step(bound)
-            origin = float(np.mean(residuals)) if n_valid else 0.0
-            symbols = quantize(residuals, step, origin)
-            # Simulate the exact decode path:
-            decoded_valid = (
-                pred_valid.astype(np.float64)
-                + dequantize(symbols, step, origin)
-            ).astype(np.float32)
+            prior = self._predictor.base_prior(mask)
+            symbols, recon_rows, origin = self._causal_scan_encode(
+                field, mask, prior, step
+            )
+            # --- Verify-and-repair: compare against original values ------
+            grid3d = recon_rows.reshape(self.shape)
+            decoded_valid = grid3d[~mask]
             repair_map, _, max_abs_error, _ = verify_and_repair(
                 valid_values, decoded_valid, bound
             )
@@ -248,12 +245,10 @@ class HoapsWvpaCodec:
             (ent_len,) = struct.unpack_from("<Q", payload, 0)
             symbols = decode_symbols(payload[8 : 8 + ent_len], n_valid)
             repair_positions, repair_values, _ = unpack_repairs(payload, 8 + ent_len)
-            # Prediction identical to encode (mask-driven transformer).
-            prediction = self._predictor.predict(mask)
-            pred_valid = prediction[~mask].astype(np.float64)[:n_valid]
-            decoded_valid = (
-                pred_valid + dequantize(symbols[:n_valid], step, origin)
-            ).astype(np.float32)
+            # --- Causal scan (identical walk to encode) ------------------
+            prior = self._predictor.base_prior(mask)
+            recon_rows = self._causal_scan_decode(prior, mask, symbols, step, origin)
+            decoded_valid = recon_rows.reshape(self.shape)[~mask]
             if repair_positions.size:
                 decoded_valid[repair_positions] = repair_values
 
@@ -266,3 +261,109 @@ class HoapsWvpaCodec:
             out[...] = field.reshape(out.shape)
             return out
         return field
+
+    # ------------------------------------------------------------------
+    # Causal scan (Lorentz-style context; identical encode/decode walk)
+    # ------------------------------------------------------------------
+    def _causal_scan_encode(self, field, mask, prior, step):
+        """Fused encode-side causal scan (single pass).
+
+        Predicts each valid cell from already-reconstructed causal
+        neighbors (temporal parent, left, top, top-left, top-right),
+        quantizes the residual directly on the step-lattice (origin 0;
+        entropy is shift-invariant, and the header carries 0.0), and
+        materializes the exact decoder state. Plain-float inner loops
+        (SC-005). Returns (symbols, recon_rows, origin).
+        """
+        t, lat, lon = self.shape
+        n_valid = int(mask.size - int(mask.sum()))
+        symbols = np.zeros(n_valid, dtype=np.int64)
+        recon_rows = np.zeros((t * lat, lon), dtype=np.float64)
+        fld = field
+        msk = mask
+        step_f = float(step)
+        inv_step = 1.0 / step_f  # step > 0 in this path
+        lo = -(1 << 31) + 1
+        hi = (1 << 31) - 1
+        prior_np = np.asarray(prior, dtype=np.float64)
+        k = 0
+        for ti in range(t):
+            base = ti * lat
+            for yi in range(lat):
+                row = base + yi
+                has_top = yi > 0
+                top_row = row - 1
+                has_time = ti > 0
+                time_row = row - lat
+                for xi in range(lon):
+                    if msk[ti, yi, xi]:
+                        continue
+                    # causal neighbors: all already reconstructed (decode
+                    # holds the same state at this point of the scan)
+                    preds = []
+                    wts = []
+                    if has_time and recon_rows[time_row, xi] != 0.0:
+                        preds.append(recon_rows[time_row, xi]); wts.append(4.0)
+                    if xi > 0 and recon_rows[row, xi - 1] != 0.0:
+                        preds.append(recon_rows[row, xi - 1]); wts.append(2.0)
+                    if has_top and recon_rows[top_row, xi] != 0.0:
+                        preds.append(recon_rows[top_row, xi]); wts.append(2.0)
+                    if has_top and xi > 0 and recon_rows[top_row, xi - 1] != 0.0:
+                        preds.append(recon_rows[top_row, xi - 1]); wts.append(1.0)
+                    if has_top and xi < lon - 1 and recon_rows[top_row, xi + 1] != 0.0:
+                        preds.append(recon_rows[top_row, xi + 1]); wts.append(1.0)
+                    if preds:
+                        pred = sum(p * w for p, w in zip(preds, wts)) / sum(wts)
+                    else:
+                        pred = prior_np[ti, yi, xi]
+                    r = float(fld[ti, yi, xi]) - pred
+                    q = int(math.floor(r * inv_step + 0.5))
+                    if q < lo:
+                        q = lo
+                    elif q > hi:
+                        q = hi
+                    symbols[k] = q
+                    # decoder state: pred + dequantized residual (origin=0)
+                    recon_rows[row, xi] = pred + q * step_f
+                    k += 1
+        return symbols, recon_rows, 0.0
+
+    def _causal_scan_decode(self, prior, mask, symbols, step, origin):
+        """Decoder mirror of :meth:`_causal_scan_encode` (same order/math)."""
+        t, lat, lon = self.shape
+        recon_rows = np.zeros((t * lat, lon), dtype=np.float64)
+        msk = mask
+        step_f = float(step)
+        prior_np = np.asarray(prior, dtype=np.float64)
+        k = 0
+        for ti in range(t):
+            base = ti * lat
+            for yi in range(lat):
+                row = base + yi
+                has_top = yi > 0
+                top_row = row - 1
+                has_time = ti > 0
+                time_row = row - lat
+                for xi in range(lon):
+                    if msk[ti, yi, xi]:
+                        continue
+                    preds = []
+                    wts = []
+                    if has_time and recon_rows[time_row, xi] != 0.0:
+                        preds.append(recon_rows[time_row, xi]); wts.append(4.0)
+                    if xi > 0 and recon_rows[row, xi - 1] != 0.0:
+                        preds.append(recon_rows[row, xi - 1]); wts.append(2.0)
+                    if has_top and recon_rows[top_row, xi] != 0.0:
+                        preds.append(recon_rows[top_row, xi]); wts.append(2.0)
+                    if has_top and xi > 0 and recon_rows[top_row, xi - 1] != 0.0:
+                        preds.append(recon_rows[top_row, xi - 1]); wts.append(1.0)
+                    if has_top and xi < lon - 1 and recon_rows[top_row, xi + 1] != 0.0:
+                        preds.append(recon_rows[top_row, xi + 1]); wts.append(1.0)
+                    if preds:
+                        pred = sum(p * w for p, w in zip(preds, wts)) / sum(wts)
+                    else:
+                        pred = prior_np[ti, yi, xi]
+                    dq = int(symbols[k]) * step_f + origin
+                    recon_rows[row, xi] = pred + dq
+                    k += 1
+        return recon_rows
