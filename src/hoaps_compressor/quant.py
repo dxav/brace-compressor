@@ -1,9 +1,13 @@
 """Residual quantization bound-tied to the absolute error bound (T007, FR-016).
 
-For bound > 0, the step ``Δ <= bound`` guarantees per-element quantization
-error ``<= Δ/2 <= bound/2``, leaving headroom for predictor error and the
-verify-and-repair stage. For bound == 0 (fr-003-exempt), the "tightest
-available representation" is used: exact float32 bit patterns.
+For bound > 0, the step ``Δ = 2·bound`` gives per-element quantization error
+``<= Δ/2 = bound`` — the full error budget. Because the predictor is applied
+symmetrically at encode and decode, its error cancels out of the
+reconstruction, so the total error is purely the residual's quantization
+error (<= bound). verify-and-repair remains as a safety net for rare
+floating-point rounding that could push a value a hair over the bound.
+For bound == 0 (fr-003-exempt), the "tightest available representation" is
+used: exact float32 bit patterns.
 """
 
 from __future__ import annotations
@@ -14,10 +18,11 @@ import numpy as np
 def derive_step(error_bound: float) -> float:
     """Derive quantization step Δ from the absolute error bound.
 
-    ``Δ = bound / 2`` so quantization error <= Δ/2 = bound/4, leaving
-    half the bound as predictor-error headroom for verify-and-repair.
-    Raises ValueError for non-finite/negative bounds (defensive; bound
-    validation normally happens in bound.py).
+    ``Δ = 2·bound`` so quantization error <= Δ/2 = bound, using the full
+    error budget and maximizing CR. The predictor error cancels because it
+    is applied identically at encode and decode. Raises ValueError for
+    non-finite/negative bounds (defensive; bound validation normally
+    happens in bound.py).
     """
     import math
 
@@ -25,7 +30,7 @@ def derive_step(error_bound: float) -> float:
         raise ValueError(f"invalid error_bound: {error_bound!r}")
     if error_bound == 0.0:
         return 0.0  # bound=0: no quantization; exact path (FR-003 exemption)
-    return float(error_bound) / 2.0
+    return 2.0 * float(error_bound)
 
 
 def quantize(residual: np.ndarray, step: float, origin: float = 0.0) -> np.ndarray:

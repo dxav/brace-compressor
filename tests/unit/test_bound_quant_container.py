@@ -49,7 +49,7 @@ class TestErrorBound:
 
 class TestQuantization:
     def test_derive_step(self):
-        assert derive_step(0.1) == pytest.approx(0.05)
+        assert derive_step(0.1) == pytest.approx(0.2)  # Δ = 2·bound (full budget)
         assert derive_step(0.0) == 0.0  # bound 0 -> exact mode
         with pytest.raises(ValueError):
             derive_step(-1.0)
