@@ -313,12 +313,15 @@ evidence accumulates:
   neighbors yet) the prediction *is* the prior value.
 - For every later cell,
 
-$$\hat v = \frac{4\,v_{t-1} + 2\,v_{\text{left}} + 2\,v_{\text{top}} + 1\,v_{\text{top-left}} + 1\,v_{\text{top-right}}}
-{4+2+2+1+1}$$
+$$\hat v = \frac{5\,v_{\text{left}} + 5\,v_{\text{top}} + 2\,v_{\text{top-left}} + 2\,v_{\text{top-right}} + 1\,v_{t-1}}
+{5+5+2+2+1}$$
 
   where each neighbor is used only if it exists in the scan order and is
   not the "not-yet-reconstructed" sentinel (0.0). Weights favor the
-  temporal parent (weather persistence) over spatial neighbors.
+  **spatial** neighbors (left, top) over the temporal parent: measured on
+  real HOAPS wvpa, spatial correlation is much stronger than temporal
+  (left-neighbor MAE 0.80 vs temporal-parent MAE 2.05), and this stencil
+  raises CR from 16.34× to 17.03× at bound 0.05 (T047).
 - The residual `value − prev` enters the quantizer.
 
 > Design note (known limitation): a reconstructed value of exactly
@@ -521,7 +524,7 @@ no GPU is required and none of the guarantees depend on device.
 2. `encode(field)`: mask has ~15 % missing (land strip).
 3. `base_prior(mask)` → smooth prior (torch, ~0.1 s).
 4. Causal scan: for each of ~123 k valid cells, prediction from
-   (temporal parent 4, left 2, top 2, diagonals 1 each); residual
+   (left 5, top 5, top-left 2, top-right 2, temporal parent 1); residual
    quantized with Δ; decode-state updated. Symbols are small integers
    concentrated near 0.
 5. `verify_and_repair` finds no violation at this bound

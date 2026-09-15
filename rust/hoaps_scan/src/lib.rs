@@ -85,32 +85,34 @@ fn causal_scan_encode<'py>(
                 if m[[ti, yi, xi]] {
                     continue;
                 }
-                // causal neighbors (same order/weights as Python)
+                // causal neighbors (same order/weights as Python).
+                // Spatial-weighted stencil (T047): left 5, top 5,
+                // top-left 2, top-right 2, temporal parent 1.
                 let mut preds: [f64; 5] = [0.0; 5];
                 let mut wts: [f64; 5] = [0.0; 5];
                 let mut n = 0usize;
-                if has_time && recon_rows[time_row * lon + xi] != 0.0 {
-                    preds[n] = recon_rows[time_row * lon + xi];
-                    wts[n] = 4.0;
-                    n += 1;
-                }
                 if xi > 0 && recon_rows[row * lon + (xi - 1)] != 0.0 {
                     preds[n] = recon_rows[row * lon + (xi - 1)];
-                    wts[n] = 2.0;
+                    wts[n] = 5.0;
                     n += 1;
                 }
                 if has_top && recon_rows[top_row * lon + xi] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + xi];
-                    wts[n] = 2.0;
+                    wts[n] = 5.0;
                     n += 1;
                 }
                 if has_top && xi > 0 && recon_rows[top_row * lon + (xi - 1)] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + (xi - 1)];
-                    wts[n] = 1.0;
+                    wts[n] = 2.0;
                     n += 1;
                 }
                 if has_top && xi < lon - 1 && recon_rows[top_row * lon + (xi + 1)] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + (xi + 1)];
+                    wts[n] = 2.0;
+                    n += 1;
+                }
+                if has_time && recon_rows[time_row * lon + xi] != 0.0 {
+                    preds[n] = recon_rows[time_row * lon + xi];
                     wts[n] = 1.0;
                     n += 1;
                 }
@@ -200,28 +202,28 @@ fn causal_scan_decode<'py>(
                 let mut preds: [f64; 5] = [0.0; 5];
                 let mut wts: [f64; 5] = [0.0; 5];
                 let mut n = 0usize;
-                if has_time && recon_rows[time_row * lon + xi] != 0.0 {
-                    preds[n] = recon_rows[time_row * lon + xi];
-                    wts[n] = 4.0;
-                    n += 1;
-                }
                 if xi > 0 && recon_rows[row * lon + (xi - 1)] != 0.0 {
                     preds[n] = recon_rows[row * lon + (xi - 1)];
-                    wts[n] = 2.0;
+                    wts[n] = 5.0;
                     n += 1;
                 }
                 if has_top && recon_rows[top_row * lon + xi] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + xi];
-                    wts[n] = 2.0;
+                    wts[n] = 5.0;
                     n += 1;
                 }
                 if has_top && xi > 0 && recon_rows[top_row * lon + (xi - 1)] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + (xi - 1)];
-                    wts[n] = 1.0;
+                    wts[n] = 2.0;
                     n += 1;
                 }
                 if has_top && xi < lon - 1 && recon_rows[top_row * lon + (xi + 1)] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + (xi + 1)];
+                    wts[n] = 2.0;
+                    n += 1;
+                }
+                if has_time && recon_rows[time_row * lon + xi] != 0.0 {
+                    preds[n] = recon_rows[time_row * lon + xi];
                     wts[n] = 1.0;
                     n += 1;
                 }

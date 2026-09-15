@@ -337,19 +337,23 @@ class HoapsWvpaCodec:
                     if msk[ti, yi, xi]:
                         continue
                     # causal neighbors: all already reconstructed (decode
-                    # holds the same state at this point of the scan)
+                    # holds the same state at this point of the scan).
+                    # Spatial-weighted stencil (T047): the wvpa field has
+                    # much stronger spatial than temporal correlation
+                    # (left-neighbor MAE 0.80 vs temporal MAE 2.05), so
+                    # spatial neighbors dominate the prediction.
                     preds = []
                     wts = []
-                    if has_time and recon_rows[time_row, xi] != 0.0:
-                        preds.append(recon_rows[time_row, xi]); wts.append(4.0)
                     if xi > 0 and recon_rows[row, xi - 1] != 0.0:
-                        preds.append(recon_rows[row, xi - 1]); wts.append(2.0)
+                        preds.append(recon_rows[row, xi - 1]); wts.append(5.0)
                     if has_top and recon_rows[top_row, xi] != 0.0:
-                        preds.append(recon_rows[top_row, xi]); wts.append(2.0)
+                        preds.append(recon_rows[top_row, xi]); wts.append(5.0)
                     if has_top and xi > 0 and recon_rows[top_row, xi - 1] != 0.0:
-                        preds.append(recon_rows[top_row, xi - 1]); wts.append(1.0)
+                        preds.append(recon_rows[top_row, xi - 1]); wts.append(2.0)
                     if has_top and xi < lon - 1 and recon_rows[top_row, xi + 1] != 0.0:
-                        preds.append(recon_rows[top_row, xi + 1]); wts.append(1.0)
+                        preds.append(recon_rows[top_row, xi + 1]); wts.append(2.0)
+                    if has_time and recon_rows[time_row, xi] != 0.0:
+                        preds.append(recon_rows[time_row, xi]); wts.append(1.0)
                     if preds:
                         pred = sum(p * w for p, w in zip(preds, wts)) / sum(wts)
                     else:
@@ -395,16 +399,16 @@ class HoapsWvpaCodec:
                         continue
                     preds = []
                     wts = []
-                    if has_time and recon_rows[time_row, xi] != 0.0:
-                        preds.append(recon_rows[time_row, xi]); wts.append(4.0)
                     if xi > 0 and recon_rows[row, xi - 1] != 0.0:
-                        preds.append(recon_rows[row, xi - 1]); wts.append(2.0)
+                        preds.append(recon_rows[row, xi - 1]); wts.append(5.0)
                     if has_top and recon_rows[top_row, xi] != 0.0:
-                        preds.append(recon_rows[top_row, xi]); wts.append(2.0)
+                        preds.append(recon_rows[top_row, xi]); wts.append(5.0)
                     if has_top and xi > 0 and recon_rows[top_row, xi - 1] != 0.0:
-                        preds.append(recon_rows[top_row, xi - 1]); wts.append(1.0)
+                        preds.append(recon_rows[top_row, xi - 1]); wts.append(2.0)
                     if has_top and xi < lon - 1 and recon_rows[top_row, xi + 1] != 0.0:
-                        preds.append(recon_rows[top_row, xi + 1]); wts.append(1.0)
+                        preds.append(recon_rows[top_row, xi + 1]); wts.append(2.0)
+                    if has_time and recon_rows[time_row, xi] != 0.0:
+                        preds.append(recon_rows[time_row, xi]); wts.append(1.0)
                     if preds:
                         pred = sum(p * w for p, w in zip(preds, wts)) / sum(wts)
                     else:

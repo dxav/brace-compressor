@@ -65,6 +65,23 @@ the trained prior adds no value and is not worth shipping as the default.**
 The quantization-step change (`Δ = 2·bound`) is the real CR driver and is
 already in place.
 
+### Spatial-weighted causal predictor (T047): +4.2 % CR
+
+The wvpa field has much stronger **spatial** than temporal correlation
+(left-neighbor MAE 0.80 vs temporal-parent MAE 2.05). The causal scan's
+neighbor weights were rebalanced from `(temporal 4, left 2, top 2,
+diag 1, diag 1)` to a **spatial-weighted stencil** `(left 5, top 5,
+top-left 2, top-right 2, temporal 1)` in both the Python and Rust scans
+(bit-exact). Measured on the real field at bound 0.05:
+
+| Predictor | CR | Max error |
+|-----------|----:|----------:|
+| Temporal-weighted (old) | 16.34× | 0.0500 ≤ 0.05 |
+| **Spatial-weighted (new)** | **17.03×** | 0.0500 ≤ 0.05 |
+
+Residual symbol entropy drops from 5.70 to 5.44 bits/symbol. The Rust and
+Python paths remain byte-identical (verified).
+
 ### Block-local causal predictor (T040–T043): experimental, opt-in
 
 A block-local causal attention predictor (`use_block_predictor=True`) is
