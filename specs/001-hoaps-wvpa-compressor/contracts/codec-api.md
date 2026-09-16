@@ -1,6 +1,6 @@
 # Contract: Public Codec API (`numcodecs.Codec`)
 
-**Branch**: `remove-transformer` | **Date**: 2026-09-15
+**Branch**: `remove-transformer` | **Date**: 2026-09-16
 
 Public interface of `hoaps_compressor`. The library exposes a single codec class implementing the `numcodecs.abc.Codec` contract (numcodecs 0.15.0). See [../data-model.md](../data-model.md) for entity details and [../research.md](../research.md) R1/R7 for the numcodecs grounding.
 
@@ -22,7 +22,7 @@ class HoapsWvpaCodec(Codec):
 
 ### Constructor
 
-`__init__(shape, error_bound, missing_value="nan", dtype="float32")`
+`__init__(shape, error_bound, missing_value="nan", dtype="float32", outer_compress=True)`
 
 | Parameter | Type | Meaning |
 |-----------|------|---------|
@@ -30,6 +30,7 @@ class HoapsWvpaCodec(Codec):
 | `error_bound` | finite float ≥ 0 | Absolute error bound (physical wvpa units). **0 is valid** = tightest allowed bound (may still be lossy). Negative or non-finite → `ValueError`. |
 | `missing_value` | finite float or `"nan"` | Sentinel marking missing elements. Default `"nan"`. |
 | `dtype` | `"float32"` | Fixed in v1; other values → `ValueError`. |
+| `outer_compress` | `bool` | Try lossless zlib independently on mask and residual payloads. |
 
 ### Registration
 
@@ -48,8 +49,8 @@ codec = numcodecs.registry.get_codec({"id": "hoaps-wvpa", "shape": (12, 180, 360
 
 ### `encode(buf) -> bytes`
 
-- **Input**: buffer-like of `4·prod(shape)` bytes, C-contiguous, interpreted as float32 grid with the configured `shape`; missing elements equal to `missing_value` (or NaN when `missing_value="nan"`).
-- **Behavior**: extract mask → predict valid values from causal reconstructed neighbors → quantize residuals (step ≤ `error_bound`) → entropy-code (bit-exact) → verify-and-repair until no reconstructed value deviates by more than `error_bound` (skipped when bound = 0, exempt per FR-003) → frame container with bitpacked mask, coded residuals, metadata, checksum.
+- **Input**: buffer-like of `4·prod(shape)` bytes, interpreted as a float32 grid with the configured `shape`; non-contiguous arrays are copied into a contiguous working buffer. Missing elements equal `missing_value` (or NaN when `missing_value="nan"`).
+- **Behavior**: extract mask → predict valid values from causal reconstructed neighbors → quantize residuals with `step = 2 * error_bound` → entropy-code (bit-exact) → verify-and-repair until no reconstructed value deviates by more than `error_bound` (skipped when bound = 0, exempt per FR-003) → frame container with an RLE-or-bitpacked mask, coded residuals, metadata, and checksum.
 - **Output**: `bytes` container (self-describing; see §3).
 - **Errors**: `ValueError` on wrong buffer size/content; codec never returns a stream that violates the bound (verified internally before return).
 
@@ -90,12 +91,12 @@ All multi-byte integers little-endian. Fixed layout, length-prefixed payload sec
 |--------|------|-------|
 | 0 | 4 | Magic `"HWPC"` |
 | 4 | 2 | Container version (uint16, major ABI `1`) |
-| 6 | 2 | Flags (bit0: payloads outer-losslessly-compressed; bits1+: reserved) |
+| 6 | 2 | Flags (`0x0001`: both payloads compressed; `0x0002`: mask compressed; `0x0004`: residual compressed) |
 | 8 | 4 | Model version id (uint32) |
 | 12 | 4 | Header extra byte length `H` (uint32) |
 | 16 | H | Header extra (JSON; shape, dtype, sentinel descriptor, quantization step/lattice, per-block mode count, error_bound as recorded) |
 | 16+H | 8 | Mask payload length (uint64) |
-| ... | var | Mask payload (bitpacked missing mask, `ceil(N/8)` bytes, stored losslessly) |
+| ... | var | Mask payload (RLE or little-endian bitpacked missing mask, stored losslessly) |
 | ... | 8 | Residual payload length (uint64) |
 | ... | var | Residual payload (per-block mode ids + entropy-coded symbols + repair corrections; empty when no valid values) |
 | ... | 4 | CRC-32 checksum over all preceding bytes |
@@ -103,7 +104,7 @@ All multi-byte integers little-endian. Fixed layout, length-prefixed payload sec
 **Compatibility rules**:
 - Different major container version → decode MUST fail with a clear error.
 - Model version identifies the deterministic causal scan ABI; incompatible versions fail with a clear error.
-- `flags` bit0 set → payload sections are additionally losslessly compressed; both operations exact.
+- `flags` bit0 set → both payload sections are zlib-compressed; bits1 and 2 identify mask-only or residual-only zlib compression.
 - The container independently records everything needed for integrity; `get_config` remains the source of truth for interpretation (numcodecs stores config separately).
 
 ## 4. Error Contract (all errors raise `ValueError` unless noted)
@@ -112,7 +113,7 @@ All multi-byte integers little-endian. Fixed layout, length-prefixed payload sec
 |-----------|-------|
 | `error_bound` < 0 or non-finite | `ValueError` at construction (FR-008) |
 | `shape` not 3 positive ints; `dtype != "float32"` | `ValueError` at construction |
-| encode buffer size ≠ `4·prod(shape)` / non-contiguous | `ValueError` |
+| encode buffer size ≠ `4·prod(shape)` or incompatible dtype | `ValueError` |
 | negative/non-finite values in data not matching sentinel | treated as missing (counted and reported via header only; FR-011) |
 | decode: bad magic/version/checksum/model mismatch | `ValueError` |
 | decode: `out` wrong size | `ValueError` |
@@ -122,7 +123,7 @@ All multi-byte integers little-endian. Fixed layout, length-prefixed payload sec
 Each `encode` computes and includes in the header-extra JSON:
 
 ```json
-{ "metrics": { "max_abs_error": <float, verified ≤ error_bound>, "n_repaired": <int>, "uncompressed_size": <int>, "compressed_size": <int>, "cr": <float, compressed/uncompressed> } }
+{ "metrics": { "max_abs_error": <float, verified ≤ error_bound>, "n_repaired": <int>, "uncompressed_size": <int>, "payload_size": <int>, "bound_respected": <bool> } }
 ```
 
 This is verification data (not required for decode correctness) demonstrating SC-001/SC-003 in-process.

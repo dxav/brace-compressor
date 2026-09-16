@@ -1,4 +1,4 @@
-"""Unit tests for the bit-exact entropy coder (T028, US4)."""
+"""Unit tests for the bit-exact entropy coder."""
 
 import numpy as np
 import pytest

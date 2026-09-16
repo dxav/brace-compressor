@@ -1,4 +1,4 @@
-"""Bit-exact entropy coding stage (T028, research.md R6).
+"""Bit-exact entropy coding stage.
 
 Per-block mode selection between:
 - ``MODE_RAW``   : fixed-width two's-complement ints, stored raw;
@@ -6,7 +6,7 @@ Per-block mode selection between:
   (shared frequency table) — the "RANGE_CODED" mode;
 - ``MODE_CTX``   : context-adaptive rANS over the symbol alphabet, with
   per-context frequency tables selected by the previous symbol's
-  magnitude bucket (T048).
+    magnitude bucket.
 
 Both paths are fully lossless (bit-exact), which is the prerequisite for
 the verify-and-repair guarantee. Layout of ``encode_symbols`` output::
@@ -44,7 +44,7 @@ _RAWLEN = struct.Struct("<Q")
 _TBL = struct.Struct("<I")
 _REPAIR = struct.Struct("<I")
 
-# Context buckets by previous symbol magnitude (T048). The residual
+# Context buckets by previous symbol magnitude. The residual
 # distribution depends strongly on the previous residual's size: smooth
 # regions produce tiny residuals, edges produce larger ones. Conditioning
 # the probability model on this bucket exploits the measured conditional
@@ -157,7 +157,7 @@ def _normalize_freqs(counts: np.ndarray) -> np.ndarray:
 
 
 def rans_encode(data: bytes, freqs: np.ndarray) -> bytes:
-    """Static rANS encoder (bit-exact; see research.md R6).
+    """Static rANS encoder that preserves the input byte stream exactly.
 
     rANS is a stack: decode pops in reverse of encode, so symbols are fed
     in reverse here to make the decoder recover the original order.
@@ -212,7 +212,7 @@ def rans_decode(src: bytes, n_bytes: int, freqs: np.ndarray) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# context-adaptive rANS over the symbol alphabet (T048)
+# context-adaptive rANS over the symbol alphabet
 # ---------------------------------------------------------------------------
 def _ctx_of(prev: int) -> int:
     """Context bucket for the previous symbol's magnitude."""
@@ -356,7 +356,7 @@ _CTX_MAX_SPAN = 8192
 def _encode_range_payload(
     syms: np.ndarray, n_blocks: int
 ) -> tuple[bytes, list[int], list[int]]:
-    """Per-block RAW/RANGE payload (existing path, T028).
+    """Build the per-block RAW/RANGE payload.
 
     Returns (payload, mode_bytes, widths) so the caller can compare sizes.
     """
@@ -468,7 +468,7 @@ def _encode_range_payload(
 
 
 def _encode_ctx_payload(syms: np.ndarray, n_blocks: int) -> bytes | None:
-    """Whole-stream context-adaptive rANS payload (all blocks CTX, T048).
+    """Whole-stream context-adaptive rANS payload (all blocks CTX).
 
     All symbols are coded in one rANS stream whose per-symbol probability
     table is selected by the previous symbol's magnitude bucket. Returns
@@ -560,9 +560,9 @@ def encode_symbols(symbols: np.ndarray) -> bytes:
 
     Two candidate payloads are built and the smaller is emitted:
 
-    - **RANGE** (T028): per-block RAW/RANGE with a shared frequency table
+    - **RANGE**: per-block RAW/RANGE with a shared frequency table
       over varint bytes; mode chosen by estimated rANS size vs raw size.
-    - **CTX** (T048): whole-stream context-adaptive rANS over the symbol
+    - **CTX**: whole-stream context-adaptive rANS over the symbol
       alphabet, with per-context tables selected by the previous symbol's
       magnitude bucket. Exploits the measured conditional entropy
       (H(s|s_prev) = 4.84 vs H(s) = 5.44 bits/symbol on the real field).

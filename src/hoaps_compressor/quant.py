@@ -1,4 +1,4 @@
-"""Residual quantization bound-tied to the absolute error bound (T007, FR-016).
+"""Residual quantization tied to the absolute error bound.
 
 For bound > 0, the step ``Δ = 2·bound`` gives per-element quantization error
 ``<= Δ/2 = bound`` — the full error budget. Because the predictor is applied

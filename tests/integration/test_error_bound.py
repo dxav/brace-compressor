@@ -1,4 +1,4 @@
-"""Integration tests: error bound + CR (T010, US1)."""
+"""Integration tests for error bounds and compression ratio."""
 
 import numpy as np
 import pytest

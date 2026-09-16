@@ -35,8 +35,8 @@ the fallback when the optional extension is unavailable.
 The quantization step is derived from the configured absolute error bound.
 The verifier reconstructs the decoder result and emits exact repairs for any
 outlier before the container is returned. Missing values are never predicted
-or quantized: their bitpacked mask is stored separately and the configured
-sentinel is restored exactly.
+or quantized: their RLE-or-bitpacked mask is stored separately and the
+configured sentinel is restored exactly.
 
 ## Components
 

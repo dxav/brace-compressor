@@ -1,4 +1,4 @@
-"""Integration tests: configurable error bound (T021, US3)."""
+"""Integration tests for configurable error bounds."""
 
 import numpy as np
 import pytest

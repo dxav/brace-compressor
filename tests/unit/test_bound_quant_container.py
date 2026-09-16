@@ -1,4 +1,4 @@
-"""Unit tests: bound validation and quantization (T031) and container (T032)."""
+"""Unit tests for bounds, quantization, and container framing."""
 
 import numpy as np
 import pytest

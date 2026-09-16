@@ -1,4 +1,4 @@
-"""Integration tests: missing-value preservation (T016, US2)."""
+"""Integration tests for missing-value preservation."""
 
 import numpy as np
 import pytest

@@ -1,6 +1,6 @@
 """The public numcodecs.Codec implementing error-bounded HOAPS wvpa compression.
 
-Pipeline (research.md R4): predict from causal reconstructed neighbors with a
+Pipeline: predict from causal reconstructed neighbors with a
 deterministic cold-start value -> quantize residuals (step derived from the
 absolute error bound) -> entropy-code symbols (bit-exact, per-block mode
 selection) -> verify-and-repair (bounds the decoded error; skipped when
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import struct
+from typing import Any
 
 import numpy as np
 
@@ -35,7 +36,7 @@ except Exception:  # pragma: no cover - extension optional
 
 MODEL_VERSION = 1
 CODEC_VERSION = "0.1.0"
-OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass (FR-018)
+OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass
 
 _MODE_QUANTIZED = 0
 _MODE_EXACT = 1  # bound == 0: raw float32 bit patterns (tightest representation)
@@ -219,6 +220,11 @@ class HoapsWvpaCodec:
             c = read_container(buf)
         except ContainerError:
             raise
+        if c.model_version != MODEL_VERSION:
+            raise ValueError(
+                f"unsupported causal-scan model version {c.model_version}; "
+                f"this codec supports {MODEL_VERSION}"
+            )
         h = c.header_extra
         shape = tuple(h["shape"])
         if shape != self.shape:
@@ -271,7 +277,7 @@ class HoapsWvpaCodec:
         return field
 
     # ------------------------------------------------------------------
-    # Causal scan (Lorentz-style context; identical encode/decode walk)
+    # Causal scan: identical encode/decode walk
     # ------------------------------------------------------------------
     def _causal_scan_encode(self, field, mask, prior, step):
         """Fused encode-side causal scan (single pass).
@@ -317,7 +323,7 @@ class HoapsWvpaCodec:
                         continue
                     # causal neighbors: all already reconstructed (decode
                     # holds the same state at this point of the scan).
-                    # Spatial-weighted stencil (T047): the wvpa field has
+                    # Spatial-weighted stencil: the wvpa field has
                     # much stronger spatial than temporal correlation
                     # (left-neighbor MAE 0.80 vs temporal MAE 2.05), so
                     # spatial neighbors dominate the prediction.

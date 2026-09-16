@@ -8,7 +8,10 @@
 //! The scan is the dominant cost of compression/decompression; moving it
 //! to Rust removes the per-cell Python interpreter overhead.
 
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
+    PyReadonlyArray3,
+};
 use pyo3::prelude::*;
 
 /// Encode-side causal scan.
@@ -28,10 +31,7 @@ fn causal_scan_encode<'py>(
     mask: PyReadonlyArray3<'py, bool>,
     prior: PyReadonlyArray3<'py, f32>,
     step: f64,
-) -> PyResult<(
-    Bound<'py, PyArray1<i64>>,
-    Bound<'py, PyArray2<f64>>,
-)> {
+) -> PyResult<(Bound<'py, PyArray1<i64>>, Bound<'py, PyArray2<f64>>)> {
     let f = field.as_array();
     let m = mask.as_array();
     let p = prior.as_array();
@@ -86,7 +86,7 @@ fn causal_scan_encode<'py>(
                     continue;
                 }
                 // causal neighbors (same order/weights as Python).
-                // Spatial-weighted stencil (T047): left 5, top 5,
+                // Spatial-weighted stencil: left 5, top 5,
                 // top-left 2, top-right 2, temporal parent 1.
                 let mut preds: [f64; 5] = [0.0; 5];
                 let mut wts: [f64; 5] = [0.0; 5];

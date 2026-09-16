@@ -1,4 +1,4 @@
-"""numcodecs.Codec contract tests (T009, US1; T020 partly, US3)."""
+"""Tests for the public numcodecs.Codec contract."""
 
 import json
 
@@ -67,6 +67,23 @@ def test_decode_out_wrong_size_raises(codec_factory):
     bad = np.empty((2, 4, 5), dtype=np.float32)
     with pytest.raises(ValueError, match="out buffer"):
         codec2.decode(enc, out=bad)
+
+
+def test_decode_rejects_unknown_scan_version(codec_factory, smooth_field):
+    from hoaps_compressor.container import read_container, write_container
+
+    field, _ = smooth_field
+    codec = codec_factory()
+    container = read_container(codec.encode(field))
+    incompatible = write_container(
+        header_extra=container.header_extra,
+        mask_payload=container.mask_payload,
+        residual_payload=container.residual_payload,
+        model_version=999,
+        outer_compress=False,
+    )
+    with pytest.raises(ValueError, match="model version"):
+        codec.decode(incompatible)
 
 
 def test_encode_wrong_buffer_size_raises(codec_factory):

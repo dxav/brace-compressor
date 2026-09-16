@@ -1,4 +1,4 @@
-"""Verify-and-repair loop (T008, FR-003/FR-016).
+"""Verify-and-repair loop for the positive-bound path.
 
 After a candidate encoding, the encoder simulates the exact decode path,
 measures per-element error against the bound, and repairs any violating

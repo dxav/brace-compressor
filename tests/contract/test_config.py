@@ -1,4 +1,4 @@
-"""Config contract tests (T020, US3)."""
+"""Configuration contract tests."""
 
 import json
 
