@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from hoaps_compressor import HoapsWvpaCodec
+from brace_compressor import BraceCodec
 from tests.conftest import DEFAULT_SHAPE, make_smooth_field
 
 
@@ -11,7 +11,7 @@ def test_cr_monotonic_in_bound():
     field, _ = make_smooth_field()
     sizes = []
     for b in (0.01, 0.05, 0.2):
-        codec = HoapsWvpaCodec(shape=DEFAULT_SHAPE, error_bound=b)
+        codec = BraceCodec(shape=DEFAULT_SHAPE, error_bound=b)
         enc = codec.encode(field)
         sizes.append(len(enc))
         dec = codec.decode(enc)
@@ -27,7 +27,7 @@ def test_cr_monotonic_typical_scale():
     field, _ = make_smooth_field(shape=shape)
     sizes = {}
     for b in (0.01, 0.05, 0.2):
-        codec = HoapsWvpaCodec(shape=shape, error_bound=b)
+        codec = BraceCodec(shape=shape, error_bound=b)
         enc = codec.encode(field)
         sizes[b] = len(enc)
         dec = codec.decode(enc)
@@ -39,9 +39,9 @@ def test_cr_monotonic_typical_scale():
 
 def test_config_roundtrip_behavioral_identity():
     field, _ = make_smooth_field()
-    codec = HoapsWvpaCodec(shape=DEFAULT_SHAPE, error_bound=0.05)
+    codec = BraceCodec(shape=DEFAULT_SHAPE, error_bound=0.05)
     cfg = codec.get_config()
-    codec2 = HoapsWvpaCodec.from_config(cfg)
+    codec2 = BraceCodec.from_config(cfg)
     e1 = codec.encode(field)
     e2 = codec2.encode(field)
     assert e1 == e2  # byte-identical encodes
@@ -51,4 +51,4 @@ def test_config_roundtrip_behavioral_identity():
 def test_invalid_bounds_rejected():
     for bad in (-0.001, float("-inf"), float("inf"), float("nan")):
         with pytest.raises(ValueError):
-            HoapsWvpaCodec(shape=DEFAULT_SHAPE, error_bound=bad)
+            BraceCodec(shape=DEFAULT_SHAPE, error_bound=bad)

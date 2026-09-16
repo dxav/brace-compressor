@@ -5,40 +5,40 @@ import json
 import numpy as np
 import pytest
 
-import hoaps_compressor  # registers codec on import
-from hoaps_compressor import HoapsWvpaCodec
+import brace_compressor  # registers codec on import
+from brace_compressor import BraceCodec
 from tests.conftest import DEFAULT_BOUND, DEFAULT_SHAPE, make_smooth_field
 
 
 def test_codec_id():
-    assert HoapsWvpaCodec.codec_id == "hoaps-wvpa"
-    assert isinstance(HoapsWvpaCodec.codec_id, str)
+    assert BraceCodec.codec_id == "brace-wvpa"
+    assert isinstance(BraceCodec.codec_id, str)
 
 
 def test_registered_in_numcodecs_registry():
     import numcodecs.registry
 
     codec = numcodecs.registry.get_codec(
-        {"id": "hoaps-wvpa", "shape": list(DEFAULT_SHAPE), "error_bound": DEFAULT_BOUND}
+        {"id": "brace-wvpa", "shape": list(DEFAULT_SHAPE), "error_bound": DEFAULT_BOUND}
     )
-    assert isinstance(codec, HoapsWvpaCodec)
+    assert isinstance(codec, BraceCodec)
 
 
 def test_get_config_json_roundtrip():
-    codec = HoapsWvpaCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND)
+    codec = BraceCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND)
     cfg = codec.get_config()
-    assert cfg["id"] == "hoaps-wvpa"
+    assert cfg["id"] == "brace-wvpa"
     # JSON-serializable (numcodecs contract)
     restored = json.loads(json.dumps(cfg))
     assert restored == cfg
-    codec2 = HoapsWvpaCodec.from_config(restored)
+    codec2 = BraceCodec.from_config(restored)
     assert codec2.shape == codec.shape
     assert codec2.error_bound == codec.error_bound
 
 
 def test_from_config_rejects_wrong_id():
     with pytest.raises(ValueError, match="id mismatch"):
-        HoapsWvpaCodec.from_config({"id": "other", "shape": [1, 2, 3], "error_bound": 0.1})
+        BraceCodec.from_config({"id": "other", "shape": [1, 2, 3], "error_bound": 0.1})
 
 
 def test_encode_decode_buffer_contract(codec_factory, smooth_field):
@@ -61,7 +61,7 @@ def test_encode_decode_buffer_contract(codec_factory, smooth_field):
 
 def test_two_dimensional_challenge_slice_roundtrip():
     field = np.array([[1.0, np.nan], [2.0, 3.0]], dtype=np.float32)
-    codec = HoapsWvpaCodec(shape=field.shape, error_bound=0.05)
+    codec = BraceCodec(shape=field.shape, error_bound=0.05)
     encoded = codec.encode(field)
     out = np.empty(field.shape, dtype=np.float32)
     decoded = codec.decode(encoded, out=out)
@@ -74,7 +74,7 @@ def test_two_dimensional_challenge_slice_roundtrip():
 def test_decode_out_wrong_size_raises(codec_factory):
     codec = codec_factory()
     field, _ = make_smooth_field(shape=(2, 4, 4))
-    codec2 = HoapsWvpaCodec(shape=(2, 4, 4), error_bound=0.05)
+    codec2 = BraceCodec(shape=(2, 4, 4), error_bound=0.05)
     enc = codec2.encode(field)
     bad = np.empty((2, 4, 5), dtype=np.float32)
     with pytest.raises(ValueError, match="out buffer"):
@@ -82,7 +82,7 @@ def test_decode_out_wrong_size_raises(codec_factory):
 
 
 def test_decode_rejects_unknown_scan_version(codec_factory, smooth_field):
-    from hoaps_compressor.container import read_container, write_container
+    from brace_compressor.container import read_container, write_container
 
     field, _ = smooth_field
     codec = codec_factory()
@@ -106,14 +106,14 @@ def test_encode_wrong_buffer_size_raises(codec_factory):
 
 def test_constructor_validation():
     with pytest.raises(ValueError, match="error_bound"):
-        HoapsWvpaCodec(shape=(1, 4, 4), error_bound=-0.1)
+        BraceCodec(shape=(1, 4, 4), error_bound=-0.1)
     with pytest.raises(ValueError, match="error_bound"):
-        HoapsWvpaCodec(shape=(1, 4, 4), error_bound=float("inf"))
+        BraceCodec(shape=(1, 4, 4), error_bound=float("inf"))
     with pytest.raises(ValueError, match="error_bound"):
-        HoapsWvpaCodec(shape=(1, 4, 4), error_bound=float("nan"))
+        BraceCodec(shape=(1, 4, 4), error_bound=float("nan"))
     # zero bound is VALID (FR-017)
-    HoapsWvpaCodec(shape=(1, 4, 4), error_bound=0.0)
+    BraceCodec(shape=(1, 4, 4), error_bound=0.0)
     with pytest.raises(ValueError, match="shape"):
-        HoapsWvpaCodec(shape=(0, 4, 4), error_bound=0.1)
+        BraceCodec(shape=(0, 4, 4), error_bound=0.1)
     with pytest.raises(ValueError, match="dtype"):
-        HoapsWvpaCodec(shape=(1, 4, 4), error_bound=0.1, dtype="float64")
+        BraceCodec(shape=(1, 4, 4), error_bound=0.1, dtype="float64")

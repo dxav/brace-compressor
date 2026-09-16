@@ -1,7 +1,7 @@
-//! Rust-accelerated scan for the HOAPS wvpa codec.
+//! Rust-accelerated scan for the BRACE wvpa codec.
 //!
 //! This is a bit-exact port of the pure-Python scan in
-//! `src/hoaps_compressor/codec.py` (`_causal_scan_encode` /
+//! `src/brace_compressor/codec.py` (`_causal_scan_encode` /
 //! `_causal_scan_decode`). The scan order, neighbor weights and
 //! arithmetic are identical so encode/decode remain bit-consistent.
 //!
@@ -250,7 +250,7 @@ fn causal_scan_decode<'py>(
 
 /// Python module definition.
 #[pymodule]
-fn hoaps_scan(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(causal_scan_encode, m)?)?;
     m.add_function(wrap_pyfunction!(causal_scan_decode, m)?)?;
     Ok(())

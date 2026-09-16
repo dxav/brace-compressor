@@ -4,12 +4,12 @@ import json
 
 import pytest
 
-from hoaps_compressor import HoapsWvpaCodec
+from brace_compressor import BraceCodec
 from tests.conftest import DEFAULT_BOUND, DEFAULT_SHAPE
 
 
 def test_get_config_keys():
-    cfg = HoapsWvpaCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND).get_config()
+    cfg = BraceCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND).get_config()
     assert set(cfg.keys()) == {
         "id",
         "shape",
@@ -18,7 +18,7 @@ def test_get_config_keys():
         "dtype",
         "outer_compress",
     }
-    assert cfg["id"] == "hoaps-wvpa"
+    assert cfg["id"] == "brace-wvpa"
     assert cfg["shape"] == list(DEFAULT_SHAPE)
     assert cfg["error_bound"] == DEFAULT_BOUND
     assert cfg["missing_value"] == "nan"
@@ -26,7 +26,7 @@ def test_get_config_keys():
 
 
 def test_config_json_serializable():
-    cfg = HoapsWvpaCodec(
+    cfg = BraceCodec(
         shape=(1, 2, 3), error_bound=0.2, missing_value=-999.0, outer_compress=False
     ).get_config()
     restored = json.loads(json.dumps(cfg))
@@ -34,10 +34,10 @@ def test_config_json_serializable():
 
 
 def test_from_config_full_cycle():
-    original = HoapsWvpaCodec(
+    original = BraceCodec(
         shape=(2, 3, 4), error_bound=0.25, missing_value=-32767.0
     )
-    rebuilt = HoapsWvpaCodec.from_config(original.get_config())
+    rebuilt = BraceCodec.from_config(original.get_config())
     assert rebuilt.shape == original.shape
     assert rebuilt.error_bound == original.error_bound
     assert rebuilt.missing_value == original.missing_value
@@ -45,4 +45,4 @@ def test_from_config_full_cycle():
 
 def test_from_config_missing_keys():
     with pytest.raises(ValueError, match="required config key"):
-        HoapsWvpaCodec.from_config({"id": "hoaps-wvpa"})
+        BraceCodec.from_config({"id": "brace-wvpa"})

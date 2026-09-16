@@ -1,8 +1,8 @@
-"""HOAPS compressor: error-bounded numcodecs codec for wvpa data."""
+"""BRACE: bounded residual adaptive compression for wvpa data."""
 
-from .codec import HoapsWvpaCodec
+from .codec import BraceCodec
 
-__all__ = ["HoapsWvpaCodec"]
+__all__ = ["BraceCodec"]
 
 __version__ = "0.1.0"
 
@@ -12,7 +12,7 @@ def _register() -> None:
     try:
         import numcodecs.registry
 
-        numcodecs.registry.register_codec(HoapsWvpaCodec)
+        numcodecs.registry.register_codec(BraceCodec)
     except Exception:  # pragma: no cover - registration must never break import
         pass
 

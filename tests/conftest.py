@@ -49,9 +49,9 @@ def smooth_field():
 @pytest.fixture
 def codec_factory():
     """Factory to build codecs with defaults matching DEFAULT_SHAPE."""
-    from hoaps_compressor import HoapsWvpaCodec
+    from brace_compressor import BraceCodec
 
     def _make(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND, **kw):
-        return HoapsWvpaCodec(shape=shape, error_bound=error_bound, **kw)
+        return BraceCodec(shape=shape, error_bound=error_bound, **kw)
 
     return _make

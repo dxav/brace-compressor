@@ -3,14 +3,14 @@
 import numpy as np
 import pytest
 
-from hoaps_compressor import HoapsWvpaCodec
+from brace_compressor import BraceCodec
 from tests.conftest import DEFAULT_BOUND, DEFAULT_SHAPE, make_smooth_field
 
 
 @pytest.mark.parametrize("bound", [0.01, 0.05, 0.2])
 def test_roundtrip_respects_bound(bound):
     field, _ = make_smooth_field()
-    codec = HoapsWvpaCodec(shape=DEFAULT_SHAPE, error_bound=bound)
+    codec = BraceCodec(shape=DEFAULT_SHAPE, error_bound=bound)
     enc = codec.encode(field)
     dec = codec.decode(enc)
     valid = ~np.isnan(field)
@@ -25,11 +25,11 @@ def test_cr_at_least_50pct_smaller():
     # fixed container header dominates):
     shape = (8, 90, 180)
     field, _ = make_smooth_field(shape=shape)
-    codec = HoapsWvpaCodec(shape=shape, error_bound=DEFAULT_BOUND)
+    codec = BraceCodec(shape=shape, error_bound=DEFAULT_BOUND)
     enc = codec.encode(field)
     assert len(enc) <= 0.5 * field.nbytes  # SC-003
     # metrics recorded in header (FR-012)
-    from hoaps_compressor.container import read_container
+    from brace_compressor.container import read_container
 
     meta = read_container(enc).header_extra["metrics"]
     assert meta["max_abs_error"] <= DEFAULT_BOUND
@@ -38,7 +38,7 @@ def test_cr_at_least_50pct_smaller():
     assert meta["bound_respected"] is True
     # small toy fields still round-trip and do not grow unreasonably
     small, _ = make_smooth_field()
-    small_codec = HoapsWvpaCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND)
+    small_codec = BraceCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND)
     small_enc = small_codec.encode(small)
     assert len(small_enc) < 4 * small.nbytes
 
@@ -46,9 +46,9 @@ def test_cr_at_least_50pct_smaller():
 def test_metrics_reported():
     """FR-012: encode reports metrics and bound confirmation."""
     field, _ = make_smooth_field()
-    codec = HoapsWvpaCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND)
+    codec = BraceCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND)
     enc = codec.encode(field)
-    from hoaps_compressor.container import read_container
+    from brace_compressor.container import read_container
 
     m = read_container(enc).header_extra["metrics"]
     assert m["max_abs_error"] <= DEFAULT_BOUND
@@ -60,7 +60,7 @@ def test_metrics_reported():
 
 def test_bound_zero_is_tightest_and_may_be_lossy():
     field, _ = make_smooth_field()
-    codec = HoapsWvpaCodec(shape=DEFAULT_SHAPE, error_bound=0.0)
+    codec = BraceCodec(shape=DEFAULT_SHAPE, error_bound=0.0)
     enc = codec.encode(field)
     dec = codec.decode(enc)
     # FR-003 exemption: output may be lossy; it must simply decode validly.
@@ -73,6 +73,6 @@ def test_bound_zero_is_tightest_and_may_be_lossy():
 
 def test_decode_single_element_grid():
     field = np.array([[[42.5]]], dtype=np.float32)
-    codec = HoapsWvpaCodec(shape=(1, 1, 1), error_bound=0.01)
+    codec = BraceCodec(shape=(1, 1, 1), error_bound=0.01)
     dec = codec.decode(codec.encode(field))
     assert abs(float(dec[0, 0, 0]) - 42.5) <= 0.01

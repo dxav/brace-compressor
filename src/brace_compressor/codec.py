@@ -27,8 +27,8 @@ from .verify import verify_and_repair
 # loops). Falls back to the pure-Python implementation if the extension
 # is not installed.
 try:
-    from hoaps_scan import causal_scan_decode as _rs_scan_decode
-    from hoaps_scan import causal_scan_encode as _rs_scan_encode
+    from brace_scan import causal_scan_decode as _rs_scan_decode
+    from brace_scan import causal_scan_encode as _rs_scan_encode
 
     _HAS_RUST = True
 except Exception:  # pragma: no cover - extension optional
@@ -42,7 +42,7 @@ _MODE_QUANTIZED = 0
 _MODE_EXACT = 1  # bound == 0: raw float32 bit patterns (tightest representation)
 
 
-class HoapsWvpaCodec:
+class BraceCodec:
     """Error-bounded reconstructed-neighbor codec for HOAPS wvpa gridded fields.
 
     Both 2-D ``(lat, lon)`` challenge slices and 3-D ``(time, lat, lon)``
@@ -52,7 +52,7 @@ class HoapsWvpaCodec:
     ``decode(buf, out=None)``, ``get_config``, ``from_config``.
     """
 
-    codec_id = "hoaps-wvpa"
+    codec_id = "brace-wvpa"
 
     def __init__(
         self,
@@ -88,7 +88,7 @@ class HoapsWvpaCodec:
         }
 
     @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "HoapsWvpaCodec":
+    def from_config(cls, config: dict[str, Any]) -> "BraceCodec":
         cfg = dict(config)
         codec_id = cfg.pop("id", None)
         if codec_id is not None and codec_id != cls.codec_id:

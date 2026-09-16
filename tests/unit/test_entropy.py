@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from hoaps_compressor.model.entropy import (
+from brace_compressor.model.entropy import (
     MODE_CTX,
     MODE_RANGE,
     MODE_RAW,
@@ -65,7 +65,7 @@ def test_ctx_rans_roundtrip():
         ctxs[1:] = np.where(a <= 1, 0, np.where(a <= 8, 1, 2))
         counts = np.zeros((3, span), dtype=np.int64)
         np.add.at(counts, (ctxs, idx), 1)
-        from hoaps_compressor.model.entropy import _normalize_freqs_span
+        from brace_compressor.model.entropy import _normalize_freqs_span
 
         freqs_list = [_normalize_freqs_span(counts[c], span) for c in range(3)]
         stream = ctx_rans_encode(syms, freqs_list, min_symbol)

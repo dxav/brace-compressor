@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Compress/decompress a HOAPS-wvpa-like field and display CR + statistics.
+"""Compress/decompress a HOAPS-wvpa-like field with BRACE and display statistics.
 
-Utility CLI for the `hoaps-compressor` codec. Run from the repository
+Utility CLI for the `brace-compressor` codec. Run from the repository
 root with the project venv:
 
     .venv/bin/python scripts/compress_stats.py
@@ -34,8 +34,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from hoaps_compressor import HoapsWvpaCodec  # noqa: E402
-from hoaps_compressor.container import read_container  # noqa: E402
+from brace_compressor import BraceCodec  # noqa: E402
+from brace_compressor.container import read_container  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ def run_roundtrip(
             "Use NaN-missing input (HOAPS wvpa uses a fill/NaN sentinel)."
         )
 
-    codec = HoapsWvpaCodec(
+    codec = BraceCodec(
         shape=shape,
         error_bound=bound,
         missing_value=missing_value,
@@ -282,7 +282,7 @@ def print_sweep(sweep_rows: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Compress + decompress a HOAPS-wvpa-like field and report CR/statistics."
+        description="Compress + decompress a HOAPS-wvpa-like field with BRACE and report CR/statistics."
     )
     p.add_argument(
         "--input", type=Path, default=None,

@@ -3,13 +3,13 @@
 import numpy as np
 import pytest
 
-from hoaps_compressor.bound import normalize_missing_value, validate_error_bound, validate_shape
-from hoaps_compressor.container import (
+from brace_compressor.bound import normalize_missing_value, validate_error_bound, validate_shape
+from brace_compressor.container import (
     ContainerError,
     read_container,
     write_container,
 )
-from hoaps_compressor.quant import (
+from brace_compressor.quant import (
     dequantize,
     derive_step,
     quantization_error_bound,
@@ -131,7 +131,7 @@ class TestContainer:
 
 class TestMaskUnit:
     def test_pack_unpack_bitexact(self):
-        from hoaps_compressor.mask import pack_mask, unpack_mask
+        from brace_compressor.mask import pack_mask, unpack_mask
 
         rng = np.random.default_rng(5)
         mask = rng.random(1000) > 0.5
@@ -140,7 +140,7 @@ class TestMaskUnit:
         np.testing.assert_array_equal(unpack_mask(packed, 1000), mask)
 
     def test_pack_unpack_uses_rle_for_structured_mask(self):
-        from hoaps_compressor.mask import pack_mask, unpack_mask
+        from brace_compressor.mask import pack_mask, unpack_mask
 
         mask = np.zeros(4096, dtype=bool)
         mask[:2048] = True
@@ -149,7 +149,7 @@ class TestMaskUnit:
         np.testing.assert_array_equal(unpack_mask(packed, mask.size), mask)
 
     def test_extract_mask_nan_and_finite(self):
-        from hoaps_compressor.mask import extract_mask
+        from brace_compressor.mask import extract_mask
 
         vals = np.array([1.0, np.nan, 2.0, np.inf, -999.0], dtype=np.float32)
         m = extract_mask(vals, "nan")

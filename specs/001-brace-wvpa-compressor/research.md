@@ -1,4 +1,4 @@
-# Research Notes: HOAPS WVPA Causal Compressor
+# Research Notes: BRACE WVPA Codec
 
 ## Decisions
 

@@ -1,4 +1,4 @@
-# Feature Specification: HOAPS WVPA Causal Compressor
+# Feature Specification: BRACE WVPA Codec
 
 **Feature Branch**: `remove-transformer`
 

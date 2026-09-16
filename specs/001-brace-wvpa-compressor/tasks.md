@@ -1,4 +1,4 @@
-# Tasks: HOAPS WVPA Causal Compressor
+# Tasks: BRACE WVPA Codec
 
 - [x] Implement bound validation, mask handling, quantization, container framing, and verification.
 - [x] Implement deterministic Python and optional Rust scans.

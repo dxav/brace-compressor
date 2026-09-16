@@ -2,22 +2,22 @@
 
 **Branch**: `remove-transformer` | **Date**: 2026-09-16
 
-Public interface of `hoaps_compressor`. The library exposes a single codec class implementing the `numcodecs.abc.Codec` contract (numcodecs 0.15.0). See [../data-model.md](../data-model.md) for entity details and [../research.md](../research.md) R1/R7 for the numcodecs grounding.
+Public interface of `brace_compressor`. The library exposes a single codec class implementing the `numcodecs.abc.Codec` contract (numcodecs 0.15.0). See [../data-model.md](../data-model.md) for entity details and [../research.md](../research.md) R1/R7 for the numcodecs grounding.
 
-## 1. Class: `HoapsWvpaCodec`
+## 1. Class: `BraceCodec`
 
 ```python
 from numcodecs.abc import Codec
 
-class HoapsWvpaCodec(Codec):
-    codec_id = "hoaps-wvpa"
+class BraceCodec(Codec):
+  codec_id = "brace-wvpa"
 
     def __init__(self, shape, error_bound, missing_value="nan", dtype="float32"): ...
     def encode(self, buf): ...                 # buffer-like -> bytes (EncodedStream)
     def decode(self, buf, out=None): ...       # bytes (, out) -> buffer-like
     def get_config(self): -> dict              # JSON-serializable, includes "id"
     @classmethod
-    def from_config(cls, config): -> HoapsWvpaCodec
+  def from_config(cls, config): -> BraceCodec
 ```
 
 ### Constructor
@@ -36,13 +36,13 @@ class HoapsWvpaCodec(Codec):
 
 ```python
 import numcodecs.registry
-numcodecs.registry.register_codec(HoapsWvpaCodec)
+numcodecs.registry.register_codec(BraceCodec)
 ```
 
-Performed automatically on `import hoaps_compressor`. After import:
+Performed automatically on `import brace_compressor`. After import:
 
 ```python
-codec = numcodecs.registry.get_codec({"id": "hoaps-wvpa", "shape": (12, 180, 360), "error_bound": 0.01})
+codec = numcodecs.registry.get_codec({"id": "brace-wvpa", "shape": (12, 180, 360), "error_bound": 0.01})
 ```
 
 ## 2. Method Contracts
@@ -68,7 +68,7 @@ Returns, all JSON-serializable:
 
 ```json
 {
-  "id": "hoaps-wvpa",
+  "id": "brace-wvpa",
   "shape": [12, 180, 360],
   "error_bound": 0.01,
   "missing_value": "nan",
@@ -79,9 +79,9 @@ Returns, all JSON-serializable:
 
 `missing_value` may be a finite float (e.g. `9.96921e+36`, the NetCDF default fill) or the string `"nan"`.
 
-### `from_config(config) -> HoapsWvpaCodec`
+### `from_config(config) -> BraceCodec`
 
-Classmethod; inverse of `get_config`. Accepts the config dict (with `"id"` present; `"id"` validated as `"hoaps-wvpa"`). Round-trip guarantee: `HoapsWvpaCodec(**{k: v for k, v in codec.get_config().items() if k != "id"})` is behaviorally identical to `codec` (same encode/decode byte outputs).
+Classmethod; inverse of `get_config`. Accepts the config dict (with `"id"` present; `"id"` validated as `"brace-wvpa"`). Round-trip guarantee: `BraceCodec(**{k: v for k, v in codec.get_config().items() if k != "id"})` is behaviorally identical to `codec` (same encode/decode byte outputs).
 
 ## 3. Encoded Stream / Container Contract
 

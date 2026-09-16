@@ -1,4 +1,4 @@
-# HOAPS Compressor Architecture
+# BRACE Architecture
 
 The codec is a deterministic, error-bounded `numcodecs.Codec` for gridded
 HOAPS water-vapor data. It uses a reconstructed-neighbor spatial-temporal
@@ -46,4 +46,4 @@ configured sentinel is restored exactly.
 - `model/entropy.py`: lossless symbol coding.
 - `verify.py`: post-encode bound verification and repair.
 - `container.py`: versioned framing, optional outer compression, and CRC.
-- `rust/hoaps_scan`: optional accelerated scan.
+- `rust/brace_scan`: optional accelerated scan.

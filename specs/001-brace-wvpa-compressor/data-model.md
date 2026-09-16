@@ -1,8 +1,8 @@
-# Data Model: HOAPS WVPA Causal Compressor
+# Data Model: BRACE WVPA Codec
 
 ## Codec
 
-`HoapsWvpaCodec` stores `shape`, `error_bound`, `missing_value`, `dtype`, and `outer_compress`. The only supported dtype is float32. Config values are JSON serializable.
+`BraceCodec` stores `shape`, `error_bound`, `missing_value`, `dtype`, and `outer_compress`. The only supported dtype is float32. Config values are JSON serializable.
 
 ## Missing mask
 

@@ -19,14 +19,14 @@ python -m pip install -e ".[test]"
 ```
 
 The package uses `maturin` as its build backend because the optional
-`hoaps_scan` extension is part of the distribution. If a local Rust toolchain
+`brace_scan` extension is part of the distribution. If a local Rust toolchain
 is unavailable, install the Python dependencies directly and run from the
 checkout with `PYTHONPATH=src`.
 
 ## Build the Rust accelerator
 
 ```bash
-cargo build --manifest-path rust/hoaps_scan/Cargo.toml --release
+cargo build --manifest-path rust/brace_scan/Cargo.toml --release
 python -m pip install -e .
 ```
 
@@ -45,7 +45,7 @@ PYTHONPATH=. pytest tests/integration -q
 ```
 
 `PYTHONPATH=.` avoids a name collision with an unrelated installed package
-called `tests` on some environments. The expected current result is 68 tests
+called `tests` on some environments. The expected current result is 69 tests
 when running the full suite.
 
 The test groups are:
@@ -80,15 +80,14 @@ Bound sweep:
 
 The benchmark independently checks maximum valid-value error, mask identity,
 RMSE, timing, container metrics, and compression ratio. `--json` emits data
-for automation. `scripts/analyze_entropy.py` is an exploratory diagnostic for
-residual-symbol distributions; it is not required by the codec runtime.
+for automation.
 
 ## Public API
 
 ```python
-from hoaps_compressor import HoapsWvpaCodec
+from brace_compressor import BraceCodec
 
-codec = HoapsWvpaCodec(
+codec = BraceCodec(
     shape=(time, latitude, longitude),
     error_bound=0.05,
     missing_value="nan",
@@ -96,12 +95,12 @@ codec = HoapsWvpaCodec(
 encoded: bytes = codec.encode(field)
 decoded = codec.decode(encoded)
 config = codec.get_config()
-restored = HoapsWvpaCodec.from_config(config)
+restored = BraceCodec.from_config(config)
 ```
 
 `field` must represent float32 values with the configured shape. `decode` can
 write into a C-contiguous writable float32 `out` array of the same byte size.
-The codec registers itself under `hoaps-wvpa` when `hoaps_compressor` is
+The codec registers itself under `brace-wvpa` when `brace_compressor` is
 imported.
 
 ## Change discipline
