@@ -4,7 +4,7 @@
 Measures, per block: mode selection (RAW vs RANGE vs CTX), varint vs raw
 sizes, rANS/CTX table overhead, and the unconditional + conditional
 entropy of the symbol stream. This tells us where the entropy coder is
-losing bits vs the entropy floor, and whether a learned/context entropy
+losing bits vs the entropy floor, and whether a context entropy
 model could help.
 """
 

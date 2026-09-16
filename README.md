@@ -1,14 +1,14 @@
 # hoaps-compressor
 
 `hoaps-compressor` is an error-bounded, lossless-symbol `numcodecs` codec for
-HOAPS water-vapor (`wvpa`) climate fields. It compresses a three-dimensional
-float32 array with shape `(time, latitude, longitude)` using a deterministic
-causal spatial-temporal predictor, bound-derived residual quantization, and
-lossless entropy coding.
+HOAPS water-vapor (`wvpa`) climate fields. It compresses two-dimensional
+`(latitude, longitude)` slices or three-dimensional float32 arrays with shape
+`(time, latitude, longitude)` using a 
+reconstructed-neighbor predictor, bound-derived residual quantization,
+and lossless entropy coding.
 
-The implementation has no learned model, training step, GPU requirement,
-network dependency, or runtime download. An optional Rust extension accelerates
-the causal scan; the Python implementation remains the fallback.
+An optional Rust extension accelerates
+the scan; the Python implementation remains the fallback.
 
 ## Guarantees
 
@@ -17,7 +17,7 @@ the causal scan; the Python implementation remains the fallback.
 - Missing positions are stored in an independent lossless mask and restored
   with the configured sentinel.
 - Entropy coding is bit-exact, so decoded symbols match encoded symbols.
-- Rust and Python causal scans use the same order and arithmetic.
+- Rust and Python scans use the same order and arithmetic.
 - `error_bound=0` is accepted and uses the tightest available float32 path;
   the positive-bound guarantee is explicitly exempt for this mode.
 
@@ -53,6 +53,23 @@ assert np.array_equal(np.isnan(decoded), np.isnan(field))
 config = codec.get_config()
 codec_copy = HoapsWvpaCodec.from_config(config)
 ```
+
+For the compression-lab missing-values challenge, a selected 2-D xarray slice
+can be passed directly using the same `numcodecs` interface:
+
+```python
+field = da.values.astype("float32", copy=False)
+codec = HoapsWvpaCodec(shape=field.shape, error_bound=1.0, missing_value="nan")
+encoded = codec.encode(field)
+decoded = codec.decode(encoded, out=np.empty(field.shape, dtype="float32"))
+
+assert np.array_equal(np.isfinite(decoded), np.isfinite(field))
+assert np.max(np.abs(decoded[np.isfinite(field)] - field[np.isfinite(field)])) <= 1.0
+compression_ratio = field.nbytes / np.asarray(encoded).nbytes
+```
+
+Two-dimensional inputs are encoded internally as a single time slice, while
+the output buffer keeps its original 2-D shape.
 
 The class implements `codec_id`, `encode`, `decode`, `get_config`, and
 `from_config` for `numcodecs` integration. Importing `hoaps_compressor`
@@ -105,7 +122,7 @@ values as machine- and build-dependent measurements.
 
 ```text
 src/hoaps_compressor/       Python package and codec implementation
-  codec.py                  public API and causal scan orchestration
+  codec.py                  public API and scan orchestration
   mask.py                   missing-mask extraction and coding
   quant.py                  bound-derived quantization helpers
   model/entropy.py          RAW, RANGE, and context-rANS coding

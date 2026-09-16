@@ -75,17 +75,27 @@ def normalize_missing_value(missing_value: Union[float, str]) -> float:
 
 
 def validate_shape(shape) -> tuple[int, int, int]:
-    """Validate the 3-D grid shape: exactly 3 positive integer components."""
+    """Validate a 2-D or 3-D grid shape and normalize it to 3-D.
+
+    A 2-D ``(lat, lon)`` field is represented internally as one time slice.
+    """
     try:
-        t, lat, lon = shape
+        dims = tuple(shape)
     except (TypeError, ValueError) as exc:
         raise ValueError(
-            f"shape must be a 3-tuple (time, lat, lon); got {shape!r}"
+            f"shape must be a 2-tuple (lat, lon) or 3-tuple "
+            f"(time, lat, lon); got {shape!r}"
         ) from exc
-    dims = (t, lat, lon)
+    if len(dims) == 2:
+        dims = (1, *dims)
+    elif len(dims) != 3:
+        raise ValueError(
+            f"shape must be a 2-tuple (lat, lon) or 3-tuple "
+            f"(time, lat, lon); got {shape!r}"
+        )
     for d in dims:
         if isinstance(d, bool) or not isinstance(d, int) or d <= 0:
             raise ValueError(
                 f"shape components must be positive integers; got {shape!r}"
             )
-    return (int(t), int(lat), int(lon))
+    return tuple(int(dimension) for dimension in dims)

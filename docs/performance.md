@@ -25,14 +25,14 @@ quantization step is `2 * bound`.
 
 Compression has four major contributors:
 
-1. The spatial-weighted causal stencil lowers residual magnitude.
+1. The spatial-weighted reconstructed-neighbor stencil lowers residual magnitude.
 2. The temporal parent adds cross-time correlation when available.
 3. Per-block RAW/RANGE/CTX selection chooses the smallest lossless symbol
    representation.
 4. Zstandard is attempted independently on the mask and residual payloads and is
    retained only when it reduces size.
 
-The optional Rust extension accelerates the linear causal scan. Without it,
+The optional Rust extension accelerates the linear scan. Without it,
 the Python implementation has the same algorithm and stream semantics but is
 slower for large fields.
 

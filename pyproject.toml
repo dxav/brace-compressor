@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "hoaps-compressor"
 version = "0.1.0"
-description = "Error-bounded causal-predictor numcodecs codec for HOAPS wvpa climate data"
+description = "Error-bounded reconstructed-neighbor numcodecs codec for HOAPS wvpa climate data"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

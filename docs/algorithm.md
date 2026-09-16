@@ -19,7 +19,7 @@ path and is explicitly exempt from the positive-bound guarantee semantics.
 ## 1. Mask extraction
 
 `mask[t, y, x] == True` means that the input cell is missing. The valid
-values are flattened in C order, which is also the order used by the causal
+values are flattened in C order, which is also the order used by the
 scan and repair positions.
 
 The mask is encoded independently. For structured masks, `mask.py` writes
@@ -95,7 +95,7 @@ empty residual payload.
 
 ## 5. Verification and repair
 
-After the causal scan, the encoder compares the simulated decoded valid values
+After the scan, the encoder compares the simulated decoded valid values
 with the original valid values. Any position whose error exceeds the bound is
 written to a repair map as `(valid_index, exact_float32_value)`.
 
@@ -108,7 +108,7 @@ comparison, which is outside the codec's value domain.
 
 The `HWPC` container stores:
 
-1. magic, container version, flags, and causal-scan ABI version;
+1. magic, container version, flags, and scan ABI version;
 2. compact JSON metadata;
 3. mask payload length and payload;
 4. residual payload length and payload;
@@ -121,7 +121,7 @@ flags `0x0002` and `0x0004` represent mask-only and residual-only compression.
 
 ## Complexity
 
-The causal scan is `O(T*H*W)` time and stores a reconstructed field of the
+The scan is `O(T*H*W)` time and stores a reconstructed field of the
 same grid footprint. Entropy coding is linear in the number of valid symbols,
 with bounded per-block tables. No training, model file, GPU, network, or
 runtime data download is required.

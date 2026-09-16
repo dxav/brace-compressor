@@ -59,6 +59,18 @@ def test_encode_decode_buffer_contract(codec_factory, smooth_field):
     np.testing.assert_array_equal(ret, dec)
 
 
+def test_two_dimensional_challenge_slice_roundtrip():
+    field = np.array([[1.0, np.nan], [2.0, 3.0]], dtype=np.float32)
+    codec = HoapsWvpaCodec(shape=field.shape, error_bound=0.05)
+    encoded = codec.encode(field)
+    out = np.empty(field.shape, dtype=np.float32)
+    decoded = codec.decode(encoded, out=out)
+    assert decoded is out
+    assert decoded.shape == field.shape
+    assert np.isnan(decoded[0, 1])
+    np.testing.assert_allclose(decoded[~np.isnan(field)], field[~np.isnan(field)], atol=0.05)
+
+
 def test_decode_out_wrong_size_raises(codec_factory):
     codec = codec_factory()
     field, _ = make_smooth_field(shape=(2, 4, 4))
@@ -103,7 +115,5 @@ def test_constructor_validation():
     HoapsWvpaCodec(shape=(1, 4, 4), error_bound=0.0)
     with pytest.raises(ValueError, match="shape"):
         HoapsWvpaCodec(shape=(0, 4, 4), error_bound=0.1)
-    with pytest.raises(ValueError, match="shape"):
-        HoapsWvpaCodec(shape=(4, 4), error_bound=0.1)
     with pytest.raises(ValueError, match="dtype"):
         HoapsWvpaCodec(shape=(1, 4, 4), error_bound=0.1, dtype="float64")

@@ -1,4 +1,4 @@
-"""Integration tests for the causal space-time predictor."""
+"""Integration tests for the deterministic space-time predictor."""
 
 import numpy as np
 from hoaps_compressor import HoapsWvpaCodec

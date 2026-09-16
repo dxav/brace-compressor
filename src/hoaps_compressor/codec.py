@@ -1,6 +1,6 @@
 """The public numcodecs.Codec implementing error-bounded HOAPS wvpa compression.
 
-Pipeline: predict from causal reconstructed neighbors with a
+Pipeline: predict from already reconstructed neighbors with a
 deterministic cold-start value -> quantize residuals (step derived from the
 absolute error bound) -> entropy-code symbols (bit-exact, per-block mode
 selection) -> verify-and-repair (bounds the decoded error; skipped when
@@ -23,7 +23,7 @@ from .model.entropy import encode_symbols as _entropy_encode
 from .quant import derive_step
 from .verify import verify_and_repair
 
-# Optional Rust-accelerated causal scan (bit-exact port of the Python
+# Optional Rust-accelerated scan (bit-exact port of the Python
 # loops). Falls back to the pure-Python implementation if the extension
 # is not installed.
 try:
@@ -43,7 +43,10 @@ _MODE_EXACT = 1  # bound == 0: raw float32 bit patterns (tightest representation
 
 
 class HoapsWvpaCodec:
-    """Error-bounded causal-predictor codec for HOAPS wvpa gridded fields.
+    """Error-bounded reconstructed-neighbor codec for HOAPS wvpa gridded fields.
+
+    Both 2-D ``(lat, lon)`` challenge slices and 3-D ``(time, lat, lon)``
+    fields are accepted. Two-dimensional inputs are encoded as one time slice.
 
     Implements the numcodecs ``Codec`` contract: ``codec_id``, ``encode``,
     ``decode(buf, out=None)``, ``get_config``, ``from_config``.
@@ -63,7 +66,7 @@ class HoapsWvpaCodec:
         self.error_bound = validate_error_bound(error_bound)
         self.missing_value = normalize_missing_value(missing_value)
         if dtype != "float32":
-            raise ValueError(f"dtype must be 'float32' in v1; got {dtype!r}")
+            raise ValueError(f"dtype must be 'float32' in v2; got {dtype!r}")
         self.dtype = np.dtype("float32")
         self.outer_compress = bool(outer_compress)
 
@@ -222,7 +225,7 @@ class HoapsWvpaCodec:
             raise
         if c.model_version != MODEL_VERSION:
             raise ValueError(
-                f"unsupported causal-scan model version {c.model_version}; "
+                f"unsupported scan model version {c.model_version}; "
                 f"this codec supports {MODEL_VERSION}"
             )
         h = c.header_extra
@@ -280,9 +283,9 @@ class HoapsWvpaCodec:
     # Causal scan: identical encode/decode walk
     # ------------------------------------------------------------------
     def _causal_scan_encode(self, field, mask, prior, step):
-        """Fused encode-side causal scan (single pass).
+        """Fused encode-side scan (single pass).
 
-        Predicts each valid cell from already-reconstructed causal
+        Predicts each valid cell from already-reconstructed
         neighbors (temporal parent, left, top, top-left, top-right),
         quantizes the residual directly on the step-lattice (origin 0;
         entropy is shift-invariant, and the header carries 0.0), and
@@ -321,7 +324,7 @@ class HoapsWvpaCodec:
                 for xi in range(lon):
                     if msk[ti, yi, xi]:
                         continue
-                    # causal neighbors: all already reconstructed (decode
+                    # neighbors: all already reconstructed (decode
                     # holds the same state at this point of the scan).
                     # Longitude-local continuity dominates this traversal.
                     preds = []

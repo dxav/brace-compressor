@@ -1,8 +1,8 @@
 # HOAPS Compressor Architecture
 
 The codec is a deterministic, error-bounded `numcodecs.Codec` for gridded
-HOAPS water-vapor data. It uses a causal spatial-temporal predictor and a
-lossless entropy coder; it has no learned runtime model or external model
+HOAPS water-vapor data. It uses a reconstructed-neighbor spatial-temporal
+predictor and a lossless entropy coder; it has no runtime model or external model
 weights.
 
 ## Pipeline
@@ -10,7 +10,7 @@ weights.
 ```mermaid
 flowchart TB
   A[float32 field] --> B[extract missing mask]
-  B --> C[causal scan: reconstructed neighbors]
+  B --> C[scan: reconstructed neighbors]
   C --> D[quantize residuals]
   D --> E[lossless entropy coder]
   E --> F[verify and repair]
@@ -46,4 +46,4 @@ configured sentinel is restored exactly.
 - `model/entropy.py`: lossless symbol coding.
 - `verify.py`: post-encode bound verification and repair.
 - `container.py`: versioned framing, optional outer compression, and CRC.
-- `rust/hoaps_scan`: optional accelerated causal scan.
+- `rust/hoaps_scan`: optional accelerated scan.

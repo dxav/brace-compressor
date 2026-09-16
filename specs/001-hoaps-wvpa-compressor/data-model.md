@@ -10,7 +10,7 @@ A boolean array with `True` meaning missing. It is bitpacked or RLE-coded as an 
 
 ## Quantized residuals
 
-Signed integer symbols represent residuals from the deterministic causal predictor on a bound-derived lattice. The entropy payload reproduces these symbols exactly.
+Signed integer symbols represent residuals from the deterministic reconstructed-neighbor predictor on a bound-derived lattice. The entropy payload reproduces these symbols exactly.
 
 ## Causal predictor
 
@@ -18,4 +18,4 @@ The scan uses reconstructed left, top, top-left, top-right, and temporal-parent 
 
 ## Encoded stream
 
-The container contains magic/version/flags, a causal-scan ABI version, JSON metadata, mask payload, residual payload, optional lossless Zstandard compression, and CRC-32.
+The container contains magic/version/flags, a scan ABI version, JSON metadata, mask payload, residual payload, optional lossless Zstandard compression, and CRC-32.

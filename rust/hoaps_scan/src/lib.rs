@@ -1,6 +1,6 @@
-//! Rust-accelerated causal scan for the HOAPS wvpa codec.
+//! Rust-accelerated scan for the HOAPS wvpa codec.
 //!
-//! This is a bit-exact port of the pure-Python causal scan in
+//! This is a bit-exact port of the pure-Python scan in
 //! `src/hoaps_compressor/codec.py` (`_causal_scan_encode` /
 //! `_causal_scan_decode`). The scan order, neighbor weights and
 //! arithmetic are identical so encode/decode remain bit-consistent.
@@ -14,7 +14,7 @@ use numpy::{
 };
 use pyo3::prelude::*;
 
-/// Encode-side causal scan.
+/// Encode-side scan.
 ///
 /// Args:
 ///   field:  float32 [T, lat, lon] original values
@@ -85,7 +85,7 @@ fn causal_scan_encode<'py>(
                 if m[[ti, yi, xi]] {
                     continue;
                 }
-                // causal neighbors (same order/weights as Python).
+                // reconstructed neighbors (same order/weights as Python).
                 // Longitude-local stencil: left 8, top 2,
                 // top-left 1, top-right 1, temporal parent 1.
                 let mut preds: [f64; 5] = [0.0; 5];
@@ -146,7 +146,7 @@ fn causal_scan_encode<'py>(
     Ok((sym_arr, recon_arr))
 }
 
-/// Decode-side causal scan (mirror of encode; same order/math).
+/// Decode-side scan (mirror of encode; same order/math).
 ///
 /// Args:
 ///   prior:   float32 [T, lat, lon]

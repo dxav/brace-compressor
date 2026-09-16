@@ -34,7 +34,8 @@ class TestErrorBound:
 
     def test_shape_validation(self):
         assert validate_shape((2, 3, 4)) == (2, 3, 4)
-        for bad in [(0, 3, 4), (-1, 3, 4), (2, 3), (2, 3, 4, 5), (1.5, 3, 4)]:
+        assert validate_shape((3, 4)) == (1, 3, 4)
+        for bad in [(0, 3, 4), (-1, 3, 4), (2,), (2, 3, 4, 5), (1.5, 3, 4)]:
             with pytest.raises(ValueError):
                 validate_shape(bad)
 
