@@ -12,10 +12,7 @@ abs(decoded - original) <= error_bound
 The missing-value mask is lossless. Missing cells are not predicted or
 quantized; their configured sentinel is restored after decoding. Non-finite
 values are treated as missing. A zero or sub-epsilon bound uses the same
-quantized path as positive bounds, with float32 machine epsilon as the minimum
-effective error budget. It is near-lossless, but can differ by floating-point
-computation error. Float64 inputs are converted to float32 at the codec
-boundary, and missing values use the configured sentinel.
+quantized path as positive bounds. It is near-lossless, but can differ by floating-point computation error. Float64 inputs are converted to float32 at the codec boundary, and missing values use the configured sentinel.
 
 ## 1. Mask extraction
 
