@@ -86,29 +86,29 @@ fn causal_scan_encode<'py>(
                     continue;
                 }
                 // causal neighbors (same order/weights as Python).
-                // Spatial-weighted stencil: left 5, top 5,
-                // top-left 2, top-right 2, temporal parent 1.
+                // Longitude-local stencil: left 8, top 2,
+                // top-left 1, top-right 1, temporal parent 1.
                 let mut preds: [f64; 5] = [0.0; 5];
                 let mut wts: [f64; 5] = [0.0; 5];
                 let mut n = 0usize;
                 if xi > 0 && recon_rows[row * lon + (xi - 1)] != 0.0 {
                     preds[n] = recon_rows[row * lon + (xi - 1)];
-                    wts[n] = 5.0;
+                    wts[n] = 8.0;
                     n += 1;
                 }
                 if has_top && recon_rows[top_row * lon + xi] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + xi];
-                    wts[n] = 5.0;
+                    wts[n] = 2.0;
                     n += 1;
                 }
                 if has_top && xi > 0 && recon_rows[top_row * lon + (xi - 1)] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + (xi - 1)];
-                    wts[n] = 2.0;
+                    wts[n] = 1.0;
                     n += 1;
                 }
                 if has_top && xi < lon - 1 && recon_rows[top_row * lon + (xi + 1)] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + (xi + 1)];
-                    wts[n] = 2.0;
+                    wts[n] = 1.0;
                     n += 1;
                 }
                 if has_time && recon_rows[time_row * lon + xi] != 0.0 {
@@ -204,22 +204,22 @@ fn causal_scan_decode<'py>(
                 let mut n = 0usize;
                 if xi > 0 && recon_rows[row * lon + (xi - 1)] != 0.0 {
                     preds[n] = recon_rows[row * lon + (xi - 1)];
-                    wts[n] = 5.0;
+                    wts[n] = 8.0;
                     n += 1;
                 }
                 if has_top && recon_rows[top_row * lon + xi] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + xi];
-                    wts[n] = 5.0;
+                    wts[n] = 2.0;
                     n += 1;
                 }
                 if has_top && xi > 0 && recon_rows[top_row * lon + (xi - 1)] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + (xi - 1)];
-                    wts[n] = 2.0;
+                    wts[n] = 1.0;
                     n += 1;
                 }
                 if has_top && xi < lon - 1 && recon_rows[top_row * lon + (xi + 1)] != 0.0 {
                     preds[n] = recon_rows[top_row * lon + (xi + 1)];
-                    wts[n] = 2.0;
+                    wts[n] = 1.0;
                     n += 1;
                 }
                 if has_time && recon_rows[time_row * lon + xi] != 0.0 {

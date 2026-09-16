@@ -5,8 +5,8 @@ Layout (all little-endian):
 | Offset | Size | Field                                        |
 |--------|------|----------------------------------------------|
 | 0      | 4    | Magic b"HWPC"                                |
-| 4      | 2    | Container version (uint16, ABI 1)            |
-| 6      | 2    | Flags (bit0: payloads outer-losslessly compressed) |
+| 4      | 2    | Container version (uint16, ABI 2)            |
+| 6      | 2    | Flags (Zstandard payload compression selectors) |
 | 8      | 4    | Model version (uint32)                       |
 | 12     | 4    | Header-extra JSON length H (uint32)          |
 | 16     | H    | Header extra (UTF-8 JSON)                    |
@@ -21,14 +21,16 @@ from __future__ import annotations
 
 import json
 import struct
-import zlib
+import binascii
 from dataclasses import dataclass
 
-MAGIC = b"HWPC"
-CONTAINER_VERSION = 1
+import zstandard
 
-# Flag 0x0001 is the original ABI-1 meaning: both payloads are compressed.
-# New streams use 0x0002/0x0004 when only one payload benefits.
+MAGIC = b"HWPC"
+CONTAINER_VERSION = 2
+
+# Flag 0x0001 means both payloads are Zstandard-compressed.
+# Flags 0x0002/0x0004 identify mask-only or residual-only compression.
 FLAG_OUTER_COMPRESSED = 0x0001
 FLAG_MASK_COMPRESSED = 0x0002
 FLAG_RESIDUAL_COMPRESSED = 0x0004
@@ -68,15 +70,15 @@ class Container:
 
 def _compress_if_needed(data: bytes, compress: bool) -> bytes:
     if compress and data:
-        return zlib.compress(data, level=6)
+        return zstandard.ZstdCompressor(level=3).compress(data)
     return data
 
 
 def _decompress_if_needed(data: bytes, compressed: bool) -> bytes:
     if compressed and data:
         try:
-            return zlib.decompress(data)
-        except zlib.error as exc:
+            return zstandard.ZstdDecompressor().decompress(data)
+        except zstandard.ZstdError as exc:
             raise ContainerError(f"payload decompression failed: {exc}") from exc
     return data
 
@@ -124,7 +126,7 @@ def write_container(
         residual_out,
     ]
     body = b"".join(parts)
-    return body + _CRC32.pack(zlib.crc32(body) & 0xFFFFFFFF)
+    return body + _CRC32.pack(binascii.crc32(body) & 0xFFFFFFFF)
 
 
 def read_container(buf) -> Container:
@@ -148,7 +150,7 @@ def read_container(buf) -> Container:
 
     crc_stored = _CRC32.unpack(data[-_CRC32.size:])[0]
     body = data[:-_CRC32.size]
-    crc_actual = zlib.crc32(body) & 0xFFFFFFFF
+    crc_actual = binascii.crc32(body) & 0xFFFFFFFF
     if crc_stored != crc_actual:
         raise ContainerError(
             f"container checksum mismatch: stored {crc_stored:#x}, computed {crc_actual:#x}"

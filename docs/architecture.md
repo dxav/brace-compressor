@@ -21,8 +21,8 @@ flowchart TB
 
 The scan visits `(time, latitude, longitude)` in a fixed order. Each valid
 cell is predicted from already reconstructed left, top, diagonal, and
-temporal-parent cells. The spatial-weighted stencil is `(left 5, top 5,
-top-left 2, top-right 2, temporal 1)`. At a cold start the predictor uses a
+temporal-parent cells. The longitude-local stencil is `(left 8, top 2,
+top-left 1, top-right 1, temporal 1)`. At a cold start the predictor uses a
 constant value of `32.0`, which is available identically to encode and decode.
 
 The encoder simulates the decoder state while quantizing. Decode repeats the

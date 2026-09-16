@@ -82,8 +82,8 @@ The bundled real sample is a `(28, 320, 720)` HOAPS-like field:
 
 The benchmark performs encode and decode, independently checks the bound and
 mask, and reports size, CR, RMSE, timing, and container metrics. The current
-observed ratios for that sample are approximately `12.52x`, `18.20x`, and
-`28.05x` at bounds `0.01`, `0.05`, and `0.2`, respectively. Treat benchmark
+observed ratios for that sample are approximately `12.50x`, `18.17x`, and
+`27.96x` at bounds `0.01`, `0.05`, and `0.2`, respectively. Treat benchmark
 values as machine- and build-dependent measurements.
 
 ## Documentation map
@@ -110,7 +110,7 @@ src/hoaps_compressor/       Python package and codec implementation
   quant.py                  bound-derived quantization helpers
   model/entropy.py          RAW, RANGE, and context-rANS coding
   verify.py                 bound verification and exact repairs
-  container.py              HWPC framing, zlib flags, and CRC
+  container.py              HWPC framing, Zstandard flags, and CRC
 rust/hoaps_scan/            optional bit-exact Rust scan
 scripts/                    benchmark and entropy-analysis utilities
 tests/                      unit, contract, and integration tests

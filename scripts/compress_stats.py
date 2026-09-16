@@ -307,7 +307,7 @@ def main() -> None:
     )
     p.add_argument(
         "--no-outer-compress", action="store_true",
-        help="Disable the lossless outer zlib pass on payloads",
+        help="Disable the lossless outer Zstandard pass on payloads",
     )
     p.add_argument(
         "--json", action="store_true",

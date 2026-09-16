@@ -30,7 +30,7 @@ class HoapsWvpaCodec(Codec):
 | `error_bound` | finite float ≥ 0 | Absolute error bound (physical wvpa units). **0 is valid** = tightest allowed bound (may still be lossy). Negative or non-finite → `ValueError`. |
 | `missing_value` | finite float or `"nan"` | Sentinel marking missing elements. Default `"nan"`. |
 | `dtype` | `"float32"` | Fixed in v1; other values → `ValueError`. |
-| `outer_compress` | `bool` | Try lossless zlib independently on mask and residual payloads. |
+| `outer_compress` | `bool` | Try lossless Zstandard independently on mask and residual payloads. |
 
 ### Registration
 
@@ -104,7 +104,7 @@ All multi-byte integers little-endian. Fixed layout, length-prefixed payload sec
 **Compatibility rules**:
 - Different major container version → decode MUST fail with a clear error.
 - Model version identifies the deterministic causal scan ABI; incompatible versions fail with a clear error.
-- `flags` bit0 set → both payload sections are zlib-compressed; bits1 and 2 identify mask-only or residual-only zlib compression.
+- `flags` bit0 set → both payload sections are Zstandard-compressed; bits1 and 2 identify mask-only or residual-only Zstandard compression.
 - The container independently records everything needed for integrity; `get_config` remains the source of truth for interpretation (numcodecs stores config separately).
 
 ## 4. Error Contract (all errors raise `ValueError` unless noted)

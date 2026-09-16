@@ -39,14 +39,14 @@ decoder will not have that value. Instead, encoding simulates the decoder:
    no usable neighbor exists.
 5. Quantize the residual and store the reconstructed value in decoder state.
 
-The stencil is:
+The longitude-local stencil is:
 
 | Neighbor | Weight | Available when |
 | --- | ---: | --- |
-| left `(t,y,x-1)` | 5 | `x > 0` and reconstructed value is nonzero |
-| top `(t,y-1,x)` | 5 | `y > 0` and reconstructed value is nonzero |
-| top-left `(t,y-1,x-1)` | 2 | `y > 0`, `x > 0`, and reconstructed |
-| top-right `(t,y-1,x+1)` | 2 | `y > 0`, `x+1 < W`, and reconstructed |
+| left `(t,y,x-1)` | 8 | `x > 0` and reconstructed value is nonzero |
+| top `(t,y-1,x)` | 2 | `y > 0` and reconstructed value is nonzero |
+| top-left `(t,y-1,x-1)` | 1 | `y > 0`, `x > 0`, and reconstructed |
+| top-right `(t,y-1,x+1)` | 1 | `y > 0`, `x+1 < W`, and reconstructed |
 | temporal parent `(t-1,y,x)` | 1 | `t > 0` and reconstructed value is nonzero |
 
 The Rust extension implements the same arithmetic and scan order as the
@@ -114,7 +114,7 @@ The `HWPC` container stores:
 4. residual payload length and payload;
 5. CRC-32 over all preceding bytes.
 
-The optional outer pass is zlib and lossless. Mask and residual payloads are
+The optional outer pass is Zstandard and lossless. Mask and residual payloads are
 considered independently, so incompressible entropy output is not expanded.
 Flag `0x0001` preserves the original meaning that both payloads are compressed;
 flags `0x0002` and `0x0004` represent mask-only and residual-only compression.

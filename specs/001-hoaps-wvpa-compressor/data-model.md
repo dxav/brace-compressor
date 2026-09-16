@@ -14,8 +14,8 @@ Signed integer symbols represent residuals from the deterministic causal predict
 
 ## Causal predictor
 
-The scan uses reconstructed left, top, top-left, top-right, and temporal-parent values with weights 5, 5, 2, 2, and 1. Cold starts use `32.0`. The decoder repeats the same scan.
+The scan uses reconstructed left, top, top-left, top-right, and temporal-parent values with weights 8, 2, 1, 1, and 1. Cold starts use `32.0`. The decoder repeats the same scan.
 
 ## Encoded stream
 
-The container contains magic/version/flags, a causal-scan ABI version, JSON metadata, mask payload, residual payload, optional lossless outer compression, and CRC-32.
+The container contains magic/version/flags, a causal-scan ABI version, JSON metadata, mask payload, residual payload, optional lossless Zstandard compression, and CRC-32.

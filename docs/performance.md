@@ -13,9 +13,9 @@ values, and an uncompressed size of 24.61 MiB.
 
 | Bound | Compressed | Compression ratio | Reduction | Max error | Encode | Decode |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0.01 | 1.97 MiB | **12.52x** | 92.0% | 0.01000 | 1.89 s | 2.68 s |
-| 0.05 | 1.35 MiB | **18.20x** | 94.5% | 0.05000 | 1.54 s | 1.53 s |
-| 0.20 | 898 KiB | **28.05x** | 96.4% | 0.20000 | 0.83 s | 1.14 s |
+| 0.01 | 1.93 MiB | **12.75x** | 92.2% | 0.01000 | 1.77 s | 2.61 s |
+| 0.05 | 1.33 MiB | **18.53x** | 94.6% | 0.05000 | 1.45 s | 1.47 s |
+| 0.20 | 877 KiB | **28.74x** | 96.5% | 0.20000 | 0.79 s | 1.10 s |
 
 All three runs reported zero bound violations and an identical missing mask.
 The looser bounds produce non-decreasing compression ratios because the
@@ -29,7 +29,7 @@ Compression has four major contributors:
 2. The temporal parent adds cross-time correlation when available.
 3. Per-block RAW/RANGE/CTX selection chooses the smallest lossless symbol
    representation.
-4. zlib is attempted independently on the mask and residual payloads and is
+4. Zstandard is attempted independently on the mask and residual payloads and is
    retained only when it reduces size.
 
 The optional Rust extension accelerates the linear causal scan. Without it,

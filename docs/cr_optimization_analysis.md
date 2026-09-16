@@ -4,9 +4,8 @@ The codec's compression ratio is controlled by three independent choices:
 
 1. The legal lattice step is `Delta = 2 * error_bound`, giving quantization
    error no greater than the requested positive bound.
-2. HOAPS water-vapor data has stronger spatial than temporal correlation, so
-   the causal stencil uses weights `(left 5, top 5, top-left 2, top-right 2,
-   temporal 1)`.
+2. The reference field favors longitude-local continuity, so the causal
+   stencil uses weights `(left 8, top 2, top-left 1, top-right 1, temporal 1)`.
 3. Context-adaptive lossless entropy coding exploits conditional structure in
    residual symbols without changing decoded values.
 
