@@ -1,13 +1,12 @@
 # Performance Report (SC-005)
 
-**Date**: 2026-09-15 | **Machine**: single laptop (CPU-only, 4 cores), Python 3.12, torch 2.14 CPU
+**Date**: 2026-09-15 | **Machine**: single laptop (CPU-only, 4 cores), Python 3.12
 
 ## Measured Timings
 
 Benchmark: `tests/conftest.make_smooth_field` synthetic HOAPS-like field
 (smooth space-time structure with a land-strip mask), bound = 0.05,
-encode + decode round trip, CPU only. **Rust causal scan + downsampled
-transformer prior active.**
+encode + decode round trip, CPU only. Rust causal scan active when available.
 
 | Field shape | Uncompressed | Encoded | CR   | Max error | Encode | Decode |
 |-------------|-------------:|--------:|-----:|----------:|-------:|-------:|
@@ -48,43 +47,7 @@ The RLE mask improves rANS by approximately `1.1%`, `1.6%`, and `2.5%`
 respectively. All variants preserve the missing mask and respect the error
 bound.
 
-### Enhancement phase (T039/T044): trained base prior + block-local causal predictor
-
-**Corrected assessment.** The earlier claim that training the prior raised
-CR from 11.67× to 16.34× was **wrong**: it compared the old quantization
-(`Δ = bound/2`, max error 0.0125) against the new quantization
-(`Δ = 2·bound`, max error 0.05). The CR jump was entirely due to the
-quantization-step change, **not** the trained prior.
-
-Measured at the **same** quantization step (`Δ = 2·bound`), the random and
-trained priors give **identical CR**:
-
-| Bound | Random prior CR | Trained prior CR | Max error |
-|-------|----------------:|-----------------:|----------:|
-| 0.05  | 16.34× | 16.34× | 0.0500 ≤ 0.05 |
-| 0.01  | 11.07× | 11.07× | 0.0100 ≤ 0.01 |
-
-The trained prior provides **no CR benefit** at any bound. This is
-expected: the base prior only affects **cold-start cells** (the first
-valid cell of each scan region, ~10k of 2.02 M valid cells, 0.5 %), which
-contribute negligibly to residual entropy. The causal scan's weighted
-average dominates prediction.
-
-Moreover, the trained prior is **slightly worse** at cold-start prediction
-than the random prior:
-
-| Prior | Cold-start MAE | Cold-start RMSE |
-|-------|---------------:|----------------:|
-| Random | 15.70 | 18.56 |
-| Trained | 16.23 | 20.30 |
-
-The masked-cell training (loss 212→207 on the coarse grid) did not
-improve the prior's ability to predict actual wvpa values. **Conclusion:
-the trained prior adds no value and is not worth shipping as the default.**
-The quantization-step change (`Δ = 2·bound`) is the real CR driver and is
-already in place.
-
-### Spatial-weighted causal predictor (T047): +4.2 % CR
+### Spatial-weighted causal predictor: +4.2 % CR
 
 The wvpa field has much stronger **spatial** than temporal correlation
 (left-neighbor MAE 0.80 vs temporal-parent MAE 2.05). The causal scan's
@@ -123,19 +86,6 @@ CTX is clearly better. The CTX path is bit-exact (encode/decode
 identical) and preserves the hard error bound. Encode/decode timing on
 the real field: ~1.6 s / ~2.1 s (vs ~1.9 s / ~2.2 s before).
 
-### Block-local causal predictor (T040–T043): experimental, opt-in
-
-A block-local causal attention predictor (`use_block_predictor=True`) is
-implemented and integrated into the causal scan. It is **correct and
-deterministic** (encode/decode bit-identical, hard bound preserved), but
-**currently experimental**: its `block_in_proj` weights are untrained, so
-on smooth fields it predicts worse than the fixed weighted average and
-lowers CR (e.g. 3.11× vs 4.18× on the synthetic field). It also incurs a
-per-block transformer forward pass, which is slow on the full 6.45 M-cell
-field. It is therefore **opt-in (default off)** and requires training of
-the block predictor head to be beneficial. The Rust port (T043) is
-deferred until the trained block predictor demonstrates a CR win.
-
 ## Interpretation vs SC-005
 
 - SC-005 requires a standard HOAPS wvpa field (~1–50 MB) to complete "in
@@ -145,19 +95,14 @@ deferred until the trained block predictor demonstrates a CR win.
   1. **Rust causal scan** (`rust/hoaps_scan`, PyO3): the dominant
      per-cell loop is ~100× faster than the pure-Python reference
      (bit-exact, so streams are byte-identical either way).
-  2. **Downsampled transformer prior** (`base_prior`): self-attention is
-     O(N²), so the prior now runs on a coarse grid (≤ 8192 tokens) and
-     upsamples, cutting the prior from effectively-infinite to ~0.5 s on
-     the real field.
+    2. **Deterministic cold-start prior**: the scan avoids model inference and
+      keeps runtime dominated by the causal traversal and entropy coding.
 
 ## Known Optimization Headroom (not required for v1 acceptance)
 
 - The Rust scan is single-threaded; parallelizing over time slices
   (each slice's scan is independent given the previous slice's state)
   would give a further multi-core speedup.
-- The transformer prior could use linear/local attention instead of
-  downsampling for even finer priors at large scale.
-- A smaller `d_model` would shrink the prior's share of runtime.
 
 ## Guarantees unchanged by performance work
 

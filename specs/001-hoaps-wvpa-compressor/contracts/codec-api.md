@@ -1,6 +1,6 @@
 # Contract: Public Codec API (`numcodecs.Codec`)
 
-**Branch**: `001-hoaps-wvpa-attention` | **Date**: 2026-09-15
+**Branch**: `remove-transformer` | **Date**: 2026-09-15
 
 Public interface of `hoaps_compressor`. The library exposes a single codec class implementing the `numcodecs.abc.Codec` contract (numcodecs 0.15.0). See [../data-model.md](../data-model.md) for entity details and [../research.md](../research.md) R1/R7 for the numcodecs grounding.
 
@@ -49,7 +49,7 @@ codec = numcodecs.registry.get_codec({"id": "hoaps-wvpa", "shape": (12, 180, 360
 ### `encode(buf) -> bytes`
 
 - **Input**: buffer-like of `4·prod(shape)` bytes, C-contiguous, interpreted as float32 grid with the configured `shape`; missing elements equal to `missing_value` (or NaN when `missing_value="nan"`).
-- **Behavior**: extract mask → predict valid values (space-time transformer) → quantize residuals (step ≤ `error_bound`) → entropy-code (bit-exact) → verify-and-repair until no reconstructed value deviates by more than `error_bound` (skipped when bound = 0, exempt per FR-003) → frame container with bitpacked mask, coded residuals, metadata, checksum.
+- **Behavior**: extract mask → predict valid values from causal reconstructed neighbors → quantize residuals (step ≤ `error_bound`) → entropy-code (bit-exact) → verify-and-repair until no reconstructed value deviates by more than `error_bound` (skipped when bound = 0, exempt per FR-003) → frame container with bitpacked mask, coded residuals, metadata, checksum.
 - **Output**: `bytes` container (self-describing; see §3).
 - **Errors**: `ValueError` on wrong buffer size/content; codec never returns a stream that violates the bound (verified internally before return).
 
@@ -57,7 +57,7 @@ codec = numcodecs.registry.get_codec({"id": "hoaps-wvpa", "shape": (12, 180, 360
 
 - **Input**: container bytes from `encode` (or a byte-compatible stream of the same major container version and model version).
 - **`out` semantics** (numcodecs contract): if provided, must be a writeable buffer of exactly `4·prod(shape)` bytes; decoded values are written into it and it is returned. If `None`, a fresh NumPy array (shape `shape`, dtype float32) is returned.
-- **Behavior**: validate header/checksum → restore mask bit-exactly → entropy-decode residuals → inverse-quantize with recorded step → predict where required (same model/weights) → write sentinel into missing positions.
+- **Behavior**: validate header/checksum → restore mask bit-exactly → entropy-decode residuals → inverse-quantize with recorded step → replay the deterministic causal predictor → write sentinel into missing positions.
 - **Guarantees**: for every valid position, `|decoded − original| ≤ error_bound` (SC-001) when `error_bound > 0`; at `error_bound = 0` the guarantee is exempted (FR-003 exception — output may be lossy). Missing positions identical to original sentinel (SC-002).
 - **Errors**: `ValueError` on bad magic/checksum/version, shape/model mismatch, truncated or oversized `out`.
 
@@ -72,12 +72,11 @@ Returns, all JSON-serializable:
   "error_bound": 0.01,
   "missing_value": "nan",
   "dtype": "float32",
-  "outer_compress": true,
-  "use_block_predictor": false
+  "outer_compress": true
 }
 ```
 
-`missing_value` may be a finite float (e.g. `9.96921e+36`, the NetCDF default fill) or the string `"nan"`. `use_block_predictor` (default `false`) enables the experimental block-local causal attention predictor (T042); it is opt-in because it requires trained weights to improve CR.
+`missing_value` may be a finite float (e.g. `9.96921e+36`, the NetCDF default fill) or the string `"nan"`.
 
 ### `from_config(config) -> HoapsWvpaCodec`
 
@@ -103,7 +102,7 @@ All multi-byte integers little-endian. Fixed layout, length-prefixed payload sec
 
 **Compatibility rules**:
 - Different major container version → decode MUST fail with a clear error.
-- Model version in stream must match the codec's bundled model version → otherwise clear error.
+- Model version identifies the deterministic causal scan ABI; incompatible versions fail with a clear error.
 - `flags` bit0 set → payload sections are additionally losslessly compressed; both operations exact.
 - The container independently records everything needed for integrity; `get_config` remains the source of truth for interpretation (numcodecs stores config separately).
 

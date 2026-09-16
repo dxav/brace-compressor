@@ -1,6 +1,6 @@
 # hoaps-compressor
 
-Error-bounded, transformer-based `numcodecs` codec for HOAPS water-vapor
+Error-bounded, causal-predictor `numcodecs` codec for HOAPS water-vapor
 (`wvpa`) gridded climate fields.
 
 ## Guarantees
@@ -11,8 +11,8 @@ Error-bounded, transformer-based `numcodecs` codec for HOAPS water-vapor
   guarantee is exempted per FR-003 (tightest available representation).
 - **Missing values preserved bit-exactly** (FR-004/FR-015): a losslessly
   stored bitmask restores the sentinel exactly; no valid↔missing flips.
-- **Transformer core** (FR-005): a space-time attention predictor with a
-  causal (decode-consistent) scan; JPEG AI-style techniques per FR-018.
+- **Space-time causal prediction**: reconstructed spatial and temporal
+  neighbors are used symmetrically by encode and decode.
 
 ## Install / test
 
@@ -54,8 +54,7 @@ synthetic HOAPS-like field (or your own `.npy`):
 
 ## Design docs
 
-- **Architecture** (pipeline, transformer & how it's trained, attention
-  predictor, libraries/where torch is used): `docs/architecture.md`
+- **Architecture** (pipeline, causal predictor, and entropy coding): `docs/architecture.md`
 - Spec: `specs/001-hoaps-wvpa-compressor/spec.md`
 - Plan/research: `specs/001-hoaps-wvpa-compressor/plan.md`, `research.md`
 - Contract: `specs/001-hoaps-wvpa-compressor/contracts/codec-api.md`

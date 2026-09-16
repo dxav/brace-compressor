@@ -1,7 +1,7 @@
 """The public numcodecs.Codec implementing error-bounded HOAPS wvpa compression.
 
-Pipeline (research.md R4): predict (space-time transformer, mask-driven and
-identical at encode/decode) -> quantize residuals (step derived from the
+Pipeline (research.md R4): predict from causal reconstructed neighbors with a
+deterministic cold-start value -> quantize residuals (step derived from the
 absolute error bound) -> entropy-code symbols (bit-exact, per-block mode
 selection) -> verify-and-repair (bounds the decoded error; skipped when
 bound == 0 per the FR-003 exemption) -> frame container.
@@ -19,8 +19,6 @@ from .container import ContainerError, read_container, write_container
 from .mask import apply_mask, extract_mask, pack_mask, unpack_mask
 from .model.entropy import decode_symbols, pack_repairs, unpack_repairs
 from .model.entropy import encode_symbols as _entropy_encode
-from .model.transformer import MODEL_VERSION as TRANSFORMER_MODEL_VERSION
-from .model.transformer import TransformerPredictor
 from .quant import derive_step
 from .verify import verify_and_repair
 
@@ -35,7 +33,7 @@ try:
 except Exception:  # pragma: no cover - extension optional
     _HAS_RUST = False
 
-MODEL_VERSION = TRANSFORMER_MODEL_VERSION
+MODEL_VERSION = 1
 CODEC_VERSION = "0.1.0"
 OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass (FR-018)
 
@@ -44,7 +42,7 @@ _MODE_EXACT = 1  # bound == 0: raw float32 bit patterns (tightest representation
 
 
 class HoapsWvpaCodec:
-    """Error-bounded transformer-based codec for HOAPS wvpa gridded fields.
+    """Error-bounded causal-predictor codec for HOAPS wvpa gridded fields.
 
     Implements the numcodecs ``Codec`` contract: ``codec_id``, ``encode``,
     ``decode(buf, out=None)``, ``get_config``, ``from_config``.
@@ -59,7 +57,6 @@ class HoapsWvpaCodec:
         missing_value="nan",
         dtype="float32",
         outer_compress: bool = OUTER_COMPRESS_DEFAULT,
-        use_block_predictor: bool = False,
     ):
         self.shape = validate_shape(shape)
         self.error_bound = validate_error_bound(error_bound)
@@ -68,13 +65,6 @@ class HoapsWvpaCodec:
             raise ValueError(f"dtype must be 'float32' in v1; got {dtype!r}")
         self.dtype = np.dtype("float32")
         self.outer_compress = bool(outer_compress)
-        # Block-local causal attention predictor (T042): when enabled, the
-        # causal scan uses the transformer/attention predictor instead of
-        # the fixed weighted average. Deterministic and decode-consistent.
-        self.use_block_predictor = bool(use_block_predictor)
-        # Space-time transformer predictor: consumes ONLY the missingness
-        # mask, so encode and decode compute identical predictions.
-        self._predictor = TransformerPredictor()
 
     # ------------------------------------------------------------------
     # Configuration contract (numcodecs.Codec)
@@ -91,7 +81,6 @@ class HoapsWvpaCodec:
             "missing_value": missing,
             "dtype": "float32",
             "outer_compress": self.outer_compress,
-            "use_block_predictor": self.use_block_predictor,
         }
 
     @classmethod
@@ -160,15 +149,10 @@ class HoapsWvpaCodec:
             max_abs_error = 0.0
         else:
             step = derive_step(bound)
-            prior = self._predictor.base_prior(mask)
-            if self.use_block_predictor:
-                symbols, recon_rows, origin = self._causal_scan_encode_block(
-                    field, mask, prior, step
-                )
-            else:
-                symbols, recon_rows, origin = self._causal_scan_encode(
-                    field, mask, prior, step
-                )
+            prior = np.full(self.shape, 32.0, dtype=np.float32)
+            symbols, recon_rows, origin = self._causal_scan_encode(
+                field, mask, prior, step
+            )
             # --- Verify-and-repair: compare against original values ------
             grid3d = recon_rows.reshape(self.shape)
             decoded_valid = grid3d[~mask]
@@ -268,15 +252,10 @@ class HoapsWvpaCodec:
             symbols = decode_symbols(payload[8 : 8 + ent_len], n_valid)
             repair_positions, repair_values, _ = unpack_repairs(payload, 8 + ent_len)
             # --- Causal scan (identical walk to encode) ------------------
-            prior = self._predictor.base_prior(mask)
-            if self.use_block_predictor:
-                recon_rows = self._causal_scan_decode_block(
-                    prior, mask, symbols, step, origin
-                )
-            else:
-                recon_rows = self._causal_scan_decode(
-                    prior, mask, symbols, step, origin
-                )
+            prior = np.full(self.shape, 32.0, dtype=np.float32)
+            recon_rows = self._causal_scan_decode(
+                prior, mask, symbols, step, origin
+            )
             decoded_valid = recon_rows.reshape(self.shape)[~mask]
             if repair_positions.size:
                 decoded_valid[repair_positions] = repair_values
@@ -418,92 +397,7 @@ class HoapsWvpaCodec:
                     k += 1
         return recon_rows
 
-    # ------------------------------------------------------------------
-    # Block-local causal scan (T042): transformer/attention prediction
-    # ------------------------------------------------------------------
-    #
-    # An alternative causal scan that uses the block-local causal
-    # attention predictor (TransformerPredictor.causal_block_predict)
-    # instead of the fixed weighted average. Valid cells are processed in
-    # causal blocks; within each block the predictor produces predictions
-    # from the already-reconstructed neighbors available before the block,
-    # then each cell is quantized/reconstructed sequentially. Because both
-    # encode and decode walk the same blocks in the same order with the
-    # same reconstructed state, predictions match bit-for-bit (R5).
-    #
-    # The block predictor is used only when the block has reconstructed
-    # neighbors; otherwise the base prior (cold start) is used. The hard
-    # error bound is unaffected: the predictor only sets the residual
-    # center, and verify-and-repair remains the final boundary.
 
-    def _causal_scan_encode_block(
-        self, field, mask, prior, step, block_size: int = 256
-    ):
-        """Encode-side block-local causal scan using the attention predictor."""
-        t, lat, lon = self.shape
-        n_valid = int(mask.size - int(mask.sum()))
-        symbols = np.zeros(n_valid, dtype=np.int64)
-        recon_rows = np.zeros((t * lat, lon), dtype=np.float64)
-        fld = field
-        msk = mask
-        step_f = float(step)
-        inv_step = 1.0 / step_f
-        lo = -(1 << 31) + 1
-        hi = (1 << 31) - 1
-        prior_np = np.asarray(prior, dtype=np.float64)
-        k = 0
-        # Collect valid cells in scan order.
-        cells = []
-        for ti in range(t):
-            for yi in range(lat):
-                for xi in range(lon):
-                    if not msk[ti, yi, xi]:
-                        cells.append((ti, yi, xi))
-        # Process in causal blocks.
-        for start in range(0, len(cells), block_size):
-            block = cells[start : start + block_size]
-            preds = self._predictor.causal_block_predict(
-                recon_rows, mask, block, block_size=block_size
-            )
-            for j, (ti, yi, xi) in enumerate(block):
-                row = ti * lat + yi
-                pred = float(preds[j])
-                r = float(fld[ti, yi, xi]) - pred
-                q = int(math.floor(r * inv_step + 0.5))
-                if q < lo:
-                    q = lo
-                elif q > hi:
-                    q = hi
-                symbols[k] = q
-                recon_rows[row, xi] = pred + q * step_f
-                k += 1
-        return symbols, recon_rows, 0.0
 
-    def _causal_scan_decode_block(
-        self, prior, mask, symbols, step, origin, block_size: int = 256
-    ):
-        """Decoder mirror of :meth:`_causal_scan_encode_block`."""
-        t, lat, lon = self.shape
-        recon_rows = np.zeros((t * lat, lon), dtype=np.float64)
-        msk = mask
-        step_f = float(step)
-        prior_np = np.asarray(prior, dtype=np.float64)
-        k = 0
-        cells = []
-        for ti in range(t):
-            for yi in range(lat):
-                for xi in range(lon):
-                    if not msk[ti, yi, xi]:
-                        cells.append((ti, yi, xi))
-        for start in range(0, len(cells), block_size):
-            block = cells[start : start + block_size]
-            preds = self._predictor.causal_block_predict(
-                recon_rows, mask, block, block_size=block_size
-            )
-            for j, (ti, yi, xi) in enumerate(block):
-                row = ti * lat + yi
-                pred = float(preds[j])
-                dq = int(symbols[k]) * step_f + origin
-                recon_rows[row, xi] = pred + dq
-                k += 1
-        return recon_rows
+
+

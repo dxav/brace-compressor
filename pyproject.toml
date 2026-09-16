@@ -5,16 +5,15 @@ build-backend = "maturin"
 [project]
 name = "hoaps-compressor"
 version = "0.1.0"
-description = "Error-bounded transformer-based numcodecs codec for HOAPS wvpa climate data"
+description = "Error-bounded causal-predictor numcodecs codec for HOAPS wvpa climate data"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "HOAPS Compressor Team" }]
-keywords = ["numcodecs", "codec", "compression", "climate", "HOAPS", "transformer"]
+keywords = ["numcodecs", "codec", "compression", "climate", "HOAPS"]
 dependencies = [
     "numpy>=1.26",
     "numcodecs>=0.12",
-    "torch>=2.2",
 ]
 
 [project.optional-dependencies]

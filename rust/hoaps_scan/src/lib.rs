@@ -16,7 +16,7 @@ use pyo3::prelude::*;
 /// Args:
 ///   field:  float32 [T, lat, lon] original values
 ///   mask:   bool   [T, lat, lon] (True = missing)
-///   prior:  float32 [T, lat, lon] transformer base prior
+///   prior:  float32 [T, lat, lon] deterministic cold-start prior
 ///   step:   float quantization step (> 0)
 ///
 /// Returns (symbols int64 [n_valid], recon_rows float64 [T*lat, lon]).

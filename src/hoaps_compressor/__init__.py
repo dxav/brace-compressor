@@ -1,4 +1,4 @@
-"""HOAPS compressor: error-bounded transformer-based numcodecs codec for wvpa data."""
+"""HOAPS compressor: error-bounded numcodecs codec for wvpa data."""
 
 from .codec import HoapsWvpaCodec
 
