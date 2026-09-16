@@ -33,10 +33,11 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   while preserving the configured absolute-error target through verification.
 - **Lossless missing-value handling:** missing and non-finite cells are stored
   in an independent RLE or bit-packed mask and restored exactly after decode.
-- **Per-block entropy mode selection:** valid residuals are processed in
-  blocks of 2048 symbols. Each block selects the smallest representation among
-  fixed-width RAW integers, static byte rANS over zigzagged LEB128 values, and
-  context-adaptive rANS over the residual-symbol alphabet.
+- **Adaptive entropy mode selection:** valid residuals are processed in blocks
+  of 2048 symbols. The RANGE candidate selects fixed-width RAW integers or
+  static byte rANS over zigzagged LEB128 values independently per block; the
+  encoder also compares that payload with a whole-stream context-adaptive
+  rANS candidate over the residual-symbol alphabet.
 - **Context-adaptive rANS:** the context mode selects one of three frequency
   tables from the previous residual's magnitude: `|residual| <= 1`,
   `|residual| <= 8`, or larger. This models local residual behavior without a
