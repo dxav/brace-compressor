@@ -4,6 +4,7 @@ import json
 
 import numpy as np
 import pytest
+from numcodecs.abc import Codec
 
 import brace_compressor  # registers codec on import
 from brace_compressor import BraceCodec
@@ -13,6 +14,10 @@ from tests.conftest import DEFAULT_BOUND, DEFAULT_SHAPE, make_smooth_field
 def test_codec_id():
     assert BraceCodec.codec_id == "brace"
     assert isinstance(BraceCodec.codec_id, str)
+
+
+def test_inherits_numcodecs_codec():
+    assert issubclass(BraceCodec, Codec)
 
 
 def test_registered_in_numcodecs_registry():

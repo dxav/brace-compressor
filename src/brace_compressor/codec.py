@@ -14,6 +14,7 @@ import struct
 from typing import Any
 
 import numpy as np
+from numcodecs.abc import Codec
 
 from .bound import normalize_missing_value, validate_error_bound, validate_shape
 from .container import ContainerError, read_container, write_container
@@ -41,7 +42,7 @@ OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass
 _MODE_QUANTIZED = 0
 
 
-class BraceCodec:
+class BraceCodec(Codec):
     """Error-bounded reconstructed-neighbor codec for gridded fields.
 
     Both 2-D ``(lat, lon)`` slices and 3-D ``(time, lat, lon)``

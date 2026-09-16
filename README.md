@@ -56,9 +56,9 @@ config = codec.get_config()
 codec_copy = BraceCodec.from_config(config)
 ```
 
-The class implements `codec_id`, `encode`, `decode`, `get_config`, and
-`from_config` for `numcodecs` integration. Importing `brace_compressor`
-registers the `brace` codec with the registry.
+`BraceCodec` inherits from `numcodecs.abc.Codec` and implements `codec_id`,
+`encode`, `decode`, `get_config`, and `from_config`. Importing
+`brace_compressor` registers the `brace` codec with the registry.
 
 ## Run tests
 
