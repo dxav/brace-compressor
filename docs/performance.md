@@ -18,8 +18,6 @@ values, and an uncompressed size of 24.61 MiB.
 | 0.20 | 877 KiB | **28.74x** | 96.5% | 0.20000 | 0.79 s | 1.10 s |
 
 All three runs reported zero bound violations and an identical missing mask.
-The looser bounds produce non-decreasing compression ratios because the
-quantization step is `2 * bound`.
 
 ## Interpretation
 
