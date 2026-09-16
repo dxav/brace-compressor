@@ -23,6 +23,36 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   `float32` machine epsilon as the minimum effective error budget. It is
   therefore near-lossless but can differ by floating-point computation error.
 
+## Codec features
+
+- **Reconstructed-neighbor prediction:** a deterministic causal scan uses
+  already reconstructed left, vertical, diagonal, and temporal neighbors, so
+  encoding and decoding follow the same predictor state.
+- **Bound-derived quantization:** residuals are quantized with a step of
+  approximately `2 * error_bound`, providing a compact integer residual stream
+  while preserving the configured absolute-error target through verification.
+- **Lossless missing-value handling:** missing and non-finite cells are stored
+  in an independent RLE or bit-packed mask and restored exactly after decode.
+- **Per-block entropy mode selection:** valid residuals are processed in
+  blocks of 2048 symbols. Each block selects the smallest representation among
+  fixed-width RAW integers, static byte rANS over zigzagged LEB128 values, and
+  context-adaptive rANS over the residual-symbol alphabet.
+- **Context-adaptive rANS:** the context mode selects one of three frequency
+  tables from the previous residual's magnitude: `|residual| <= 1`,
+  `|residual| <= 8`, or larger. This models local residual behavior without a
+  trained model or external table file.
+- **Verify-and-repair:** the encoder simulates the decoder, checks the actual
+  reconstructed values, and records exact float32 repairs for any positions
+  that exceed the requested positive bound.
+- **Self-describing integrity-checked container:** the HWPC container records
+  model metadata, payload lengths, compression flags, and a CRC-32 checksum.
+- **Optional Zstandard pass:** mask and residual payloads can be compressed
+  independently with Zstandard when that reduces their size; this pass is
+  lossless and does not replace the residual entropy modes.
+- **Optional Rust acceleration:** the causal scan has a bit-exact Rust
+  implementation with a Python fallback, while entropy coding remains fully
+  deterministic.
+
 ## Install
 
 ```bash
