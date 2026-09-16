@@ -20,7 +20,7 @@ def test_roundtrip_respects_bound(bound):
 
 
 def test_cr_at_least_50pct_smaller():
-    """SC-003 on a typical-scale field (SC-003 says 'typical HOAPS wvpa inputs')."""
+    """SC-003 on a representative climate-field scale."""
     # Typical-scale field (1.5 MB class, far above tiny toy grids where the
     # fixed container header dominates):
     shape = (8, 90, 180)

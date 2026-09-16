@@ -1,4 +1,4 @@
-"""BRACE: bounded residual adaptive compression for wvpa data."""
+"""BRACE: bounded residual adaptive compression for gridded data."""
 
 from .codec import BraceCodec
 

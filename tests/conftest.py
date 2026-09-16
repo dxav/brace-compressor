@@ -1,4 +1,4 @@
-"""Shared pytest fixtures: deterministic HOAPS-like synthetic fields."""
+"""Shared pytest fixtures: deterministic BRACE-like synthetic fields."""
 
 import numpy as np
 import pytest
@@ -11,8 +11,8 @@ DEFAULT_BOUND = 0.05
 def make_smooth_field(shape=DEFAULT_SHAPE, seed=42, valid_frac=0.85, land_strip=True):
     """Generate a smooth space-time field with a deterministic missing mask.
 
-    Values mimic wvpa scale (~0-60 kg/m2); smooth in lat/lon with slow
-    temporal evolution. A fraction ``valid_frac`` of cells is valid; the
+    Values use a smooth climate-field scale (~0-60 kg/m2) with slow evolution
+    in latitude and longitude. A fraction ``valid_frac`` of cells is valid; the
     rest are missing (NaN sentinel). Set ``land_strip=False`` for a
     fully-valid field.
     """

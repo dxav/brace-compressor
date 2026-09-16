@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compress/decompress a HOAPS-wvpa-like field with BRACE and display statistics.
+"""Compress/decompress a BRACE-like field and display statistics.
 
 Utility CLI for the `brace-compressor` codec. Run from the repository
 root with the project venv:
@@ -9,9 +9,9 @@ root with the project venv:
     .venv/bin/python scripts/compress_stats.py --input field.nc --bound 0.01
     .venv/bin/python scripts/compress_stats.py --sweep 0.01 0.05 0.2 --shape 4 32 64
 
-The script needs no real HOAPS data: without ``--input`` it generates a
+The script needs no external data: without ``--input`` it generates a
 smooth space-time synthetic field (deterministic seed) with a land-strip
-missing mask, mimicking HOAPS wvpa statistics. With ``--input`` it loads a
+missing mask. With ``--input`` it loads a
 ``.npy`` or NetCDF file. NetCDF input uses the ``wvpa`` variable by default;
 2-D lat×lon input is promoted to a single time slice.
 
@@ -131,7 +131,7 @@ def run_roundtrip(
     if missing_value == 0.0:
         raise SystemExit(
             "input contains no missings; a sentinel would corrupt valid zeros. "
-            "Use NaN-missing input (HOAPS wvpa uses a fill/NaN sentinel)."
+            "Use NaN-missing input so the missing mask can be preserved."
         )
 
     codec = BraceCodec(
@@ -209,7 +209,7 @@ def print_report(stats: dict) -> None:
     print()
     print(line)
     print(
-        f" HOAPS wvpa compression report  ·  bound={stats['bound']:g} · "
+        f" BRACE compression report  ·  bound={stats['bound']:g} · "
         f"shape={stats['shape'][0]}×{stats['shape'][1]}×{stats['shape'][2]} · "
         f"{stats['dtype']}"
     )
@@ -302,11 +302,11 @@ def print_sweep(sweep_rows: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Compress + decompress a HOAPS-wvpa-like field with BRACE and report CR/statistics."
+        description="Compress + decompress a gridded field with BRACE and report CR/statistics."
     )
     p.add_argument(
         "--input", type=Path, default=None,
-        help="Optional .npy or NetCDF field; default: synthetic HOAPS-like field",
+        help="Optional .npy or NetCDF field; default: synthetic BRACE-like field",
     )
     p.add_argument(
         "--variable", default="wvpa",

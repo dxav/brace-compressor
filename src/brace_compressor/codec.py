@@ -1,4 +1,4 @@
-"""The public numcodecs.Codec implementing error-bounded HOAPS wvpa compression.
+"""The public numcodecs.Codec implementing error-bounded BRACE compression.
 
 Pipeline: predict from already reconstructed neighbors with a
 deterministic cold-start value -> quantize residuals (step derived from the
@@ -42,7 +42,7 @@ _MODE_QUANTIZED = 0
 
 
 class BraceCodec:
-    """Error-bounded reconstructed-neighbor codec for HOAPS wvpa gridded fields.
+    """Error-bounded reconstructed-neighbor codec for gridded fields.
 
     Both 2-D ``(lat, lon)`` slices and 3-D ``(time, lat, lon)``
     fields are accepted. Two-dimensional inputs are encoded as one time slice.

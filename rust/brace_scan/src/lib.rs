@@ -1,4 +1,4 @@
-//! Rust-accelerated scan for the BRACE wvpa codec.
+//! Rust-accelerated scan for the BRACE codec.
 //!
 //! This is a bit-exact port of the pure-Python scan in
 //! `src/brace_compressor/codec.py` (`_causal_scan_encode` /

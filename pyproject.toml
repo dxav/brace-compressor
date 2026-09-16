@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "brace-compressor"
 version = "0.1.0"
-description = "Error-bounded reconstructed-neighbor numcodecs codec for HOAPS wvpa climate data"
+description = "Error-bounded reconstructed-neighbor numcodecs codec for gridded climate data"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -20,7 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
-keywords = ["numcodecs", "codec", "compression", "climate", "HOAPS"]
+keywords = ["BRACE", "numcodecs", "codec", "compression", "climate"]
 dependencies = [
     "numpy>=1.26",
     "numcodecs>=0.12",

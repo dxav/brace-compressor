@@ -1,7 +1,7 @@
 # BRACE Architecture
 
 The codec is a deterministic, error-bounded `numcodecs.Codec` for gridded
-HOAPS water-vapor data. It uses a reconstructed-neighbor spatial-temporal
+floating-point data. It uses a reconstructed-neighbor spatial-temporal
 predictor and a lossless entropy coder; it has no runtime model or external model
 weights.
 
