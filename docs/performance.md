@@ -29,6 +29,25 @@ Downloaded from the ESIWACE object store, `wvpa` variable, fill value
 | Missing mask | identical (SC-002) |
 | Encode / decode | **1.93 s / 2.19 s** (13.4 MB/s) |
 
+### Entropy and mask comparison
+
+The following complete-stream measurements use the real HOAPS field above,
+outer compression enabled, and the same predictor and quantization settings.
+The optimized rANS branch independently evaluates mask and residual payload
+compression and selects RLE for this structured missing-value mask. OpenZL and
+Zstandard values are from the pluggable-entropy branch using the canonical
+bitpacked mask representation.
+
+| Error bound | rANS baseline | rANS + RLE mask | OpenZL | Zstandard |
+|---:|---:|---:|---:|---:|
+| `0.01` | `12.45×` | **`12.59×`** | `11.57×` | `11.57×` |
+| `0.05` | `17.91×` | **`18.21×`** | `17.10×` | `16.87×` |
+| `0.2` | `27.38×` | **`28.08×`** | `25.42×` | `24.76×` |
+
+The RLE mask improves rANS by approximately `1.1%`, `1.6%`, and `2.5%`
+respectively. All variants preserve the missing mask and respect the error
+bound.
+
 ### Enhancement phase (T039/T044): trained base prior + block-local causal predictor
 
 **Corrected assessment.** The earlier claim that training the prior raised

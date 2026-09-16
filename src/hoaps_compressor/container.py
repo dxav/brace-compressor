@@ -11,7 +11,7 @@ Layout (all little-endian):
 | 12     | 4    | Header-extra JSON length H (uint32)          |
 | 16     | H    | Header extra (UTF-8 JSON)                    |
 | 16+H   | 8    | Mask payload length (uint64)                 |
-| ...    | var  | Mask payload (bitpacked, lossless)           |
+| ...    | var  | Mask payload (RLE or bitpacked, lossless)    |
 | ...    | 8    | Residual payload length (uint64)             |
 | ...    | var  | Residual payload                             |
 | ...    | 4    | CRC-32 over all preceding bytes              |
@@ -27,7 +27,11 @@ from dataclasses import dataclass
 MAGIC = b"HWPC"
 CONTAINER_VERSION = 1
 
+# Flag 0x0001 is the original ABI-1 meaning: both payloads are compressed.
+# New streams use 0x0002/0x0004 when only one payload benefits.
 FLAG_OUTER_COMPRESSED = 0x0001
+FLAG_MASK_COMPRESSED = 0x0002
+FLAG_RESIDUAL_COMPRESSED = 0x0004
 
 _HEADER_PREFIX = struct.Struct("<4sHHII")
 _LEN64 = struct.Struct("<Q")
@@ -51,7 +55,15 @@ class Container:
 
     @property
     def outer_compressed(self) -> bool:
-        return bool(self.flags & FLAG_OUTER_COMPRESSED)
+        return bool(self.flags & (FLAG_OUTER_COMPRESSED | FLAG_MASK_COMPRESSED | FLAG_RESIDUAL_COMPRESSED))
+
+    @property
+    def mask_outer_compressed(self) -> bool:
+        return bool(self.flags & (FLAG_OUTER_COMPRESSED | FLAG_MASK_COMPRESSED))
+
+    @property
+    def residual_outer_compressed(self) -> bool:
+        return bool(self.flags & (FLAG_OUTER_COMPRESSED | FLAG_RESIDUAL_COMPRESSED))
 
 
 def _compress_if_needed(data: bytes, compress: bool) -> bytes:
@@ -83,14 +95,22 @@ def write_container(
     mask_out, residual_out = mask_payload, residual_payload
     flags = 0
     if outer_compress:
-        # Outer compression is a CR-maximizing, always-lossless pass. Only
-        # enable when it shrinks BOTH payloads (single flag controls both).
+        # Outer compression is a CR-maximizing, always-lossless pass. Select
+        # each payload independently because entropy-coded residuals often do
+        # not shrink while the bitpacked missing mask does.
         mask_c = _compress_if_needed(mask_payload, True)
         res_c = _compress_if_needed(residual_payload, True)
         mask_better = (not mask_payload) or len(mask_c) < len(mask_payload)
         res_better = (not residual_payload) or len(res_c) < len(residual_payload)
+        if mask_better:
+            mask_out = mask_c
+            flags |= FLAG_MASK_COMPRESSED
+        if res_better:
+            residual_out = res_c
+            flags |= FLAG_RESIDUAL_COMPRESSED
         if mask_better and res_better:
-            mask_out, residual_out = mask_c, res_c
+            # Preserve the original ABI-1 flag for streams where both payloads
+            # are compressed.
             flags = FLAG_OUTER_COMPRESSED
 
     parts = [
@@ -163,9 +183,14 @@ def read_container(buf) -> Container:
     mask_payload = _take_payload()
     residual_payload = _take_payload()
 
-    compressed = bool(flags & FLAG_OUTER_COMPRESSED)
-    mask_payload = _decompress_if_needed(mask_payload, compressed)
-    residual_payload = _decompress_if_needed(residual_payload, compressed)
+    mask_payload = _decompress_if_needed(
+        mask_payload,
+        bool(flags & (FLAG_OUTER_COMPRESSED | FLAG_MASK_COMPRESSED)),
+    )
+    residual_payload = _decompress_if_needed(
+        residual_payload,
+        bool(flags & (FLAG_OUTER_COMPRESSED | FLAG_RESIDUAL_COMPRESSED)),
+    )
 
     return Container(
         container_version=version,

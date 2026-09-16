@@ -93,6 +93,18 @@ class TestContainer:
         assert c.residual_payload == res
         assert len(data) < len(write_container(hdr, mask, res, 1, False))
 
+    def test_outer_compression_selects_mask_independently(self):
+        hdr = {"k": "v"}
+        mask = bytes(1000)
+        res = np.random.default_rng(17).bytes(2048)
+        data = write_container(hdr, mask, res, model_version=1, outer_compress=True)
+        c = read_container(data)
+        assert c.outer_compressed
+        assert c.mask_outer_compressed
+        assert not c.residual_outer_compressed
+        assert c.mask_payload == mask
+        assert c.residual_payload == res
+
     def test_bad_magic(self):
         data = bytearray(write_container({}, b"", b"", 1))
         data[0:4] = b"XXXX"
@@ -125,6 +137,15 @@ class TestMaskUnit:
         packed = pack_mask(mask)
         assert len(packed) == (1000 + 7) // 8
         np.testing.assert_array_equal(unpack_mask(packed, 1000), mask)
+
+    def test_pack_unpack_uses_rle_for_structured_mask(self):
+        from hoaps_compressor.mask import pack_mask, unpack_mask
+
+        mask = np.zeros(4096, dtype=bool)
+        mask[:2048] = True
+        packed = pack_mask(mask)
+        assert packed.startswith(b"HMR1")
+        np.testing.assert_array_equal(unpack_mask(packed, mask.size), mask)
 
     def test_extract_mask_nan_and_finite(self):
         from hoaps_compressor.mask import extract_mask

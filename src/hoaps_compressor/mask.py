@@ -1,12 +1,35 @@
-"""Missing-value mask extraction and bitpacking (FR-004, FR-015).
+"""Missing-value mask extraction and compact lossless encoding (FR-004, FR-015).
 
-The mask is one bit per grid element (True = missing), bitpacked into
-``ceil(N / 8)`` bytes and stored losslessly in its own container payload.
+The mask is one bit per grid element (True = missing). Structured masks use a
+self-describing run-length encoding; less structured masks use bitpacking.
 """
 
 from __future__ import annotations
 
 import numpy as np
+
+
+_RLE_MAGIC = b"HMR1"
+
+
+def _encode_varint(value: int) -> bytes:
+    out = bytearray()
+    while value >= 128:
+        out.append((value & 0x7F) | 0x80)
+        value >>= 7
+    out.append(value)
+    return bytes(out)
+
+
+def _pack_rle(flat: np.ndarray) -> bytes:
+    changes = np.flatnonzero(flat[1:] != flat[:-1]) + 1
+    boundaries = np.concatenate(([0], changes, [flat.size]))
+    lengths = np.diff(boundaries)
+    out = bytearray(_RLE_MAGIC)
+    out.append(int(flat[0]))
+    for length in lengths:
+        out.extend(_encode_varint(int(length)))
+    return bytes(out)
 
 
 def extract_mask(values: np.ndarray, missing_value) -> np.ndarray:
@@ -31,19 +54,52 @@ def extract_mask(values: np.ndarray, missing_value) -> np.ndarray:
 
 
 def pack_mask(mask: np.ndarray) -> bytes:
-    """Bitpack a bool mask (row-major) into minimal bytes (ceil(n/8))."""
+    """Encode a mask as compact RLE or legacy-compatible bitpacked bytes."""
     flat = np.asarray(mask, dtype=bool).ravel()
     n = flat.size
     if n == 0:
         return b""
     packed = np.packbits(flat, bitorder="little")
-    return packed.tobytes()
+    rle = _pack_rle(flat)
+    return rle if len(rle) < len(packed) else packed.tobytes()
+
+
+def _unpack_rle(packed: bytes, n: int) -> np.ndarray:
+    data = memoryview(packed)
+    if len(data) < len(_RLE_MAGIC) + 1:
+        raise ValueError("truncated RLE mask payload")
+    value = bool(data[len(_RLE_MAGIC)])
+    offset = len(_RLE_MAGIC) + 1
+    flat = np.empty(n, dtype=bool)
+    position = 0
+    while position < n:
+        length = 0
+        shift = 0
+        while True:
+            if offset >= len(data) or shift > 63:
+                raise ValueError("invalid RLE mask varint")
+            byte = int(data[offset])
+            offset += 1
+            length |= (byte & 0x7F) << shift
+            if not byte & 0x80:
+                break
+            shift += 7
+        if length <= 0 or position + length > n:
+            raise ValueError("RLE mask run exceeds expected length")
+        flat[position : position + length] = value
+        position += length
+        value = not value
+    if offset != len(data):
+        raise ValueError("RLE mask payload has trailing bytes")
+    return flat
 
 
 def unpack_mask(packed: bytes, n: int) -> np.ndarray:
-    """Unpack ``n`` mask bits from ``packed`` bytes; bit-exact inverse."""
+    """Unpack optimized RLE or legacy bitpacked mask bytes."""
     if n == 0:
         return np.zeros(0, dtype=bool)
+    if bytes(packed).startswith(_RLE_MAGIC):
+        return _unpack_rle(bytes(packed), n)
     expected = (n + 7) // 8
     buf = bytes(packed)
     if len(buf) != expected:
