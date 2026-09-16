@@ -6,8 +6,7 @@ symmetrically at encode and decode, its error cancels out of the
 reconstruction, so the total error is purely the residual's quantization
 error (<= bound). verify-and-repair remains as a safety net for rare
 floating-point rounding that could push a value a hair over the bound.
-For bound == 0 (fr-003-exempt), the "tightest available representation" is
-used: exact float32 bit patterns.
+For bound == 0, valid values use the exact float32 bit-pattern representation.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ def derive_step(error_bound: float) -> float:
     if math.isnan(error_bound) or math.isinf(error_bound) or error_bound < 0:
         raise ValueError(f"invalid error_bound: {error_bound!r}")
     if error_bound == 0.0:
-        return 0.0  # bound=0: no quantization; exact path (FR-003 exemption)
+        return 0.0  # bound=0: no quantization; exact path
     return 2.0 * float(error_bound)
 
 

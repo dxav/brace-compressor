@@ -16,11 +16,13 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
 - For `error_bound > 0`, every valid decoded value is verified against the
   configured absolute bound before the stream is returned.
 - Missing positions are stored in an independent lossless mask and restored
-  with the configured sentinel.
+  without loss.
 - Entropy coding is bit-exact, so decoded symbols match encoded symbols.
 - Rust and Python scans use the same order and arithmetic.
-- `error_bound=0` is accepted and uses the tightest available float32 path;
-  the positive-bound guarantee is explicitly exempt for this mode.
+- `error_bound=0` is lossless for valid `float32` values: BRACE stores their
+  raw bit patterns and restores them exactly. Inputs supplied as `float64`
+  are converted to `float32` first, and missing NaN payload bits are not
+  preserved.
 
 ## Install
 

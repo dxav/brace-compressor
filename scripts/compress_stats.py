@@ -236,7 +236,7 @@ def print_report(stats: dict) -> None:
 
     print(" Accuracy")
     if stats["bound"] == 0:
-        print("   bound 0 (FR-003 exempt): exact-path encoding, no bound check")
+        print("   bound 0: exact raw-float32 encoding, no quantization")
     else:
         status = "OK " if stats["bound_respected"] else "FAIL"
         print(
@@ -348,7 +348,7 @@ def main() -> None:
 
     bounds = args.sweep if args.sweep else [args.bound]
     if 0 in bounds and len(bounds) > 1:
-        print("note: bound 0 uses the exact raw path (FR-003 exempt)", file=sys.stderr)
+        print("note: bound 0 uses exact raw-float32 encoding", file=sys.stderr)
 
     rows = [
         run_roundtrip(field, b, outer_compress=not args.no_outer_compress, quiet=args.json)

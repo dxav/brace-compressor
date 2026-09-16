@@ -1,7 +1,5 @@
 # Algorithm
 
-This document describes the implemented codec, not a proposed design.
-
 ## Problem and guarantees
 
 The input is a contiguous `float32` array with shape `(T, H, W)`. The codec
@@ -14,7 +12,9 @@ abs(decoded - original) <= error_bound
 The missing-value mask is lossless. Missing cells are not predicted or
 quantized; their configured sentinel is restored after decoding. Non-finite
 values are treated as missing. A zero bound selects the exact float32 payload
-path and is explicitly exempt from the positive-bound guarantee semantics.
+path: valid float32 bit patterns are stored and restored without quantization.
+Float64 inputs are converted to float32 at the codec boundary, and NaN payload
+bits in missing values are represented by the configured missing sentinel.
 
 ## 1. Mask extraction
 

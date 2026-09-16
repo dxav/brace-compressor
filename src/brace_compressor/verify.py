@@ -3,8 +3,8 @@
 After a candidate encoding, the encoder simulates the exact decode path,
 measures per-element error against the bound, and repairs any violating
 elements by escalating precision for them (exact float32 correction).
-The bound thus cannot ship violated for any bound > 0 (bound == 0 is
-exempt per FR-003 and never enters this loop).
+The bound thus cannot ship violated for any positive bound. Bound zero uses
+the codec's raw float32 path and never enters this loop.
 """
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ def verify_and_repair(orig_valid, decoded_valid, error_bound, repair_fn=None):
     Args:
         orig_valid: original valid values (float32 array).
         decoded_valid: values reconstructed exactly as the decoder would.
-        error_bound: absolute error bound (> 0; bound == 0 is exempt and
-            never calls this function).
+        error_bound: positive absolute error bound. Bound zero uses the exact
+            raw float32 path and never calls this function.
         repair_fn: optional callables registry, unused in v1 (kept for
             forward-compatible escalation hooks).
 
@@ -81,8 +81,7 @@ def verify_and_repair(orig_valid, decoded_valid, error_bound, repair_fn=None):
     remaining = np.nonzero(post > np.float32(error_bound))[0]
     if remaining.size:
         # Exact corrections cannot exceed the bound in float32 rounding;
-        # a remaining violation means a float32-representation limit, which
-        # the FR-003 guarantee measures in the decoded (float32) domain.
+        # a remaining violation means a float32-representation limit.
         max_abs = float(post.max())
     else:
         max_abs = float(post.max()) if post.size else 0.0

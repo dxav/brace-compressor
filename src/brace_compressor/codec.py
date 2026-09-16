@@ -3,8 +3,8 @@
 Pipeline: predict from already reconstructed neighbors with a
 deterministic cold-start value -> quantize residuals (step derived from the
 absolute error bound) -> entropy-code symbols (bit-exact, per-block mode
-selection) -> verify-and-repair (bounds the decoded error; skipped when
-bound == 0 per the FR-003 exemption) -> frame container.
+selection) -> verify-and-repair (bounds the decoded error for positive bounds;
+zero uses raw float32 values) -> frame container.
 """
 
 from __future__ import annotations
@@ -145,7 +145,7 @@ class BraceCodec:
         repair_values = np.zeros(0, dtype=np.float32)
 
         if bound == 0.0:
-            # FR-003 exemption: tightest available representation = raw bits.
+            # Zero-bound mode stores valid float32 values as raw bits.
             step = 0.0
             origin = 0.0
             mode = _MODE_EXACT
