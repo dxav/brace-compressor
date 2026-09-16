@@ -11,7 +11,7 @@ from tests.conftest import DEFAULT_BOUND, DEFAULT_SHAPE, make_smooth_field
 
 
 def test_codec_id():
-    assert BraceCodec.codec_id == "brace-wvpa"
+    assert BraceCodec.codec_id == "brace"
     assert isinstance(BraceCodec.codec_id, str)
 
 
@@ -19,7 +19,7 @@ def test_registered_in_numcodecs_registry():
     import numcodecs.registry
 
     codec = numcodecs.registry.get_codec(
-        {"id": "brace-wvpa", "shape": list(DEFAULT_SHAPE), "error_bound": DEFAULT_BOUND}
+        {"id": "brace", "shape": list(DEFAULT_SHAPE), "error_bound": DEFAULT_BOUND}
     )
     assert isinstance(codec, BraceCodec)
 
@@ -27,7 +27,7 @@ def test_registered_in_numcodecs_registry():
 def test_get_config_json_roundtrip():
     codec = BraceCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND)
     cfg = codec.get_config()
-    assert cfg["id"] == "brace-wvpa"
+    assert cfg["id"] == "brace"
     # JSON-serializable (numcodecs contract)
     restored = json.loads(json.dumps(cfg))
     assert restored == cfg

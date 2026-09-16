@@ -51,7 +51,7 @@ class BraceCodec:
     ``decode(buf, out=None)``, ``get_config``, ``from_config``.
     """
 
-    codec_id = "brace-wvpa"
+    codec_id = "brace"
 
     def __init__(
         self,

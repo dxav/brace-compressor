@@ -107,7 +107,7 @@ restored = BraceCodec.from_config(config)
 
 `field` must represent float32 values with the configured shape. `decode` can
 write into a C-contiguous writable float32 `out` array of the same byte size.
-The codec registers itself under `brace-wvpa` when `brace_compressor` is
+The codec registers itself under `brace` when `brace_compressor` is
 imported.
 
 ## Change discipline

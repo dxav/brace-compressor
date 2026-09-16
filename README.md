@@ -58,7 +58,7 @@ codec_copy = BraceCodec.from_config(config)
 
 The class implements `codec_id`, `encode`, `decode`, `get_config`, and
 `from_config` for `numcodecs` integration. Importing `brace_compressor`
-registers the `brace-wvpa` codec with the registry.
+registers the `brace` codec with the registry.
 
 ## Run tests
 

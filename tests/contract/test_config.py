@@ -18,7 +18,7 @@ def test_get_config_keys():
         "dtype",
         "outer_compress",
     }
-    assert cfg["id"] == "brace-wvpa"
+    assert cfg["id"] == "brace"
     assert cfg["shape"] == list(DEFAULT_SHAPE)
     assert cfg["error_bound"] == DEFAULT_BOUND
     assert cfg["missing_value"] == "nan"
@@ -45,4 +45,4 @@ def test_from_config_full_cycle():
 
 def test_from_config_missing_keys():
     with pytest.raises(ValueError, match="required config key"):
-        BraceCodec.from_config({"id": "brace-wvpa"})
+        BraceCodec.from_config({"id": "brace"})
