@@ -1,7 +1,7 @@
 """Error-bound validation (FR-008, FR-017).
 
-A bound must be a real, finite number >= 0. Zero is valid and selects the
-lossless raw-float32 path for valid values.
+A bound must be a real, finite number >= 0. Bounds below float32 machine
+epsilon use epsilon as the effective near-lossless error budget.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ def validate_error_bound(value: Bound) -> float:
         TypeError: if ``value`` is not a real number.
 
     Returns:
-        float: the validated bound. ``0.0`` is legal and selects the exact
-        raw-float32 path for valid values.
+        float: the validated bound. ``0.0`` is legal and is clamped to
+        float32 machine epsilon during quantization.
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(
@@ -38,7 +38,7 @@ def validate_error_bound(value: Bound) -> float:
         raise ValueError(
             f"error_bound must be >= 0; got {bound!r}. Negative bounds "
             "are rejected per FR-008; 0.0 is accepted as the tightest "
-            "allowed bound and selects the exact raw-float32 path."
+            "allowed bound and is clamped to float32 machine epsilon."
         )
     return bound
 

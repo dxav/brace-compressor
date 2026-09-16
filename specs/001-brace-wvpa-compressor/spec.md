@@ -8,7 +8,7 @@ The compressor reduces HOAPS water-vapor (`wvpa`) arrays through deterministic r
 
 - Accept a contiguous float32 `(time, latitude, longitude)` array through the `numcodecs.Codec` API.
 - Preserve missing-value locations exactly using a separately stored compact mask.
-- For every positive finite absolute error bound, guarantee decoded valid values are within that bound; reject negative and non-finite bounds. Zero is accepted as an exact raw-float32 mode for valid values.
+- For every finite absolute error bound, guarantee decoded valid values are within the effective bound `max(error_bound, float32_epsilon)`; reject negative and non-finite bounds. Zero is accepted as a near-lossless epsilon-clamped mode.
 - Predict each valid cell only from the missing mask, a deterministic cold-start value, and already reconstructed spatial/temporal neighbors.
 - Exploit both spatial and temporal correlation and retain a Python reference scan plus an optional bit-exact Rust scan.
 - Encode residual symbols losslessly, frame payloads with versioned metadata and CRC, and report compression metrics.

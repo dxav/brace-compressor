@@ -236,7 +236,7 @@ def print_report(stats: dict) -> None:
 
     print(" Accuracy")
     if stats["bound"] == 0:
-        print("   bound 0: exact raw-float32 encoding, no quantization")
+        print("   bound 0: near-lossless epsilon-clamped quantization")
     else:
         status = "OK " if stats["bound_respected"] else "FAIL"
         print(
@@ -318,7 +318,7 @@ def main() -> None:
     )
     p.add_argument(
         "--bound", type=float, default=0.05,
-        help="Absolute error bound (default 0.05); 0 = exact raw path",
+        help="Absolute error bound (default 0.05); 0 = epsilon-clamped near-lossless mode",
     )
     p.add_argument(
         "--sweep", type=float, nargs="*", default=None,
@@ -348,7 +348,7 @@ def main() -> None:
 
     bounds = args.sweep if args.sweep else [args.bound]
     if 0 in bounds and len(bounds) > 1:
-        print("note: bound 0 uses exact raw-float32 encoding", file=sys.stderr)
+        print("note: bound 0 uses epsilon-clamped near-lossless quantization", file=sys.stderr)
 
     rows = [
         run_roundtrip(field, b, outer_compress=not args.no_outer_compress, quiet=args.json)

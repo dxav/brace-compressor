@@ -19,10 +19,9 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   without loss.
 - Entropy coding is bit-exact, so decoded symbols match encoded symbols.
 - Rust and Python scans use the same order and arithmetic.
-- `error_bound=0` is lossless for valid `float32` values: BRACE stores their
-  raw bit patterns and restores them exactly. Inputs supplied as `float64`
-  are converted to `float32` first, and missing NaN payload bits are not
-  preserved.
+- `error_bound=0` uses the same quantized path as positive bounds, with
+  `float32` machine epsilon as the minimum effective error budget. It is
+  therefore near-lossless but can differ by floating-point computation error.
 
 ## Install
 

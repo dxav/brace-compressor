@@ -3,8 +3,8 @@
 Pipeline: predict from already reconstructed neighbors with a
 deterministic cold-start value -> quantize residuals (step derived from the
 absolute error bound) -> entropy-code symbols (bit-exact, per-block mode
-selection) -> verify-and-repair (bounds the decoded error for positive bounds;
-zero uses raw float32 values) -> frame container.
+selection) -> verify-and-repair (bounds the decoded error using an
+epsilon-clamped effective bound) -> frame container.
 """
 
 from __future__ import annotations
@@ -34,12 +34,11 @@ try:
 except Exception:  # pragma: no cover - extension optional
     _HAS_RUST = False
 
-MODEL_VERSION = 2
+MODEL_VERSION = 3
 CODEC_VERSION = "0.1.0"
 OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass
 
 _MODE_QUANTIZED = 0
-_MODE_EXACT = 1  # bound == 0: raw float32 bit patterns (tightest representation)
 
 
 class BraceCodec:
@@ -139,43 +138,28 @@ class BraceCodec:
         valid_values = field[~mask].astype(np.float32)
         n_valid = int(valid_values.size)
 
-        t, lat, lon = self.shape
         bound = self.error_bound
-        repair_positions = np.zeros(0, dtype=np.int64)
-        repair_values = np.zeros(0, dtype=np.float32)
-
-        if bound == 0.0:
-            # Zero-bound mode stores valid float32 values as raw bits.
-            step = 0.0
-            origin = 0.0
-            mode = _MODE_EXACT
-            value_payload = valid_values.tobytes()
-            max_abs_error = 0.0
-        else:
-            step = derive_step(bound)
-            prior = np.full(self.shape, 32.0, dtype=np.float32)
-            symbols, recon_rows, origin = self._causal_scan_encode(
-                field, mask, prior, step
-            )
-            # --- Verify-and-repair: compare against original values ------
-            grid3d = recon_rows.reshape(self.shape)
-            decoded_valid = grid3d[~mask]
-            repair_map, _, max_abs_error, _ = verify_and_repair(
-                valid_values, decoded_valid, bound
-            )
-            repair_positions, repair_values = (
-                repair_map.positions,
-                repair_map.values,
-            )
-            # --- Entropy coding (bit-exact; per-block mode selection) ----
-            encoded_syms = _entropy_encode(symbols)
-            body = (
-                struct.pack("<Q", len(encoded_syms))
-                + encoded_syms
-                + pack_repairs(repair_positions, repair_values)
-            )
-            value_payload = body
-            mode = _MODE_QUANTIZED
+        effective_bound = max(bound, float(np.finfo(np.float32).eps))
+        step = derive_step(bound)
+        prior = np.full(self.shape, 32.0, dtype=np.float32)
+        symbols, recon_rows, origin = self._causal_scan_encode(
+            field, mask, prior, step
+        )
+        # --- Verify-and-repair: compare against the effective bound -------
+        grid3d = recon_rows.reshape(self.shape)
+        decoded_valid = grid3d[~mask]
+        repair_map, _, max_abs_error, _ = verify_and_repair(
+            valid_values, decoded_valid, effective_bound
+        )
+        repair_positions, repair_values = repair_map.positions, repair_map.values
+        # --- Entropy coding (bit-exact; per-block mode selection) ----------
+        encoded_syms = _entropy_encode(symbols)
+        value_payload = (
+            struct.pack("<Q", len(encoded_syms))
+            + encoded_syms
+            + pack_repairs(repair_positions, repair_values)
+        )
+        mode = _MODE_QUANTIZED
 
         # --- Mask + container -------------------------------------------
         mask_payload = pack_mask(mask)
@@ -185,8 +169,9 @@ class BraceCodec:
             "missing_value": "nan" if np.isnan(self.missing_value) else float(self.missing_value),
             "error_bound": float(bound),
             "quant_step": step,
-            "origin": float(origin) if bound > 0 else 0.0,
+            "origin": float(origin),
             "mode": mode,
+            "effective_error_bound": effective_bound,
             "n_valid": int(valid_values.size),
             "n_repaired": int(repair_positions.size),
             "metrics": {
@@ -195,7 +180,7 @@ class BraceCodec:
                 "n_repaired": int(repair_positions.size),
                 "uncompressed_size": int(field.nbytes),
                 "payload_size": int(len(mask_payload) + len(value_payload)),
-                "bound_respected": bool(max_abs_error <= bound) or bound == 0.0,
+                "bound_respected": bool(max_abs_error <= effective_bound),
             },
             "codec_version": CODEC_VERSION,
         }
@@ -236,7 +221,6 @@ class BraceCodec:
             )
         step = float(h["quant_step"])
         origin = float(h["origin"])
-        mode = int(h.get("mode", 0))
         n_valid = int(h["n_valid"])
         missing_value = h["missing_value"]
         sentinel = float("nan") if missing_value == "nan" else float(missing_value)
@@ -245,29 +229,18 @@ class BraceCodec:
             c.mask_payload, int(np.prod(self.shape))
         ).reshape(self.shape)
 
-        if mode == _MODE_EXACT or step == 0.0:
-            if n_valid:
-                raw = c.residual_payload[: n_valid * 4]
-                if len(raw) < n_valid * 4:
-                    raise ValueError("exact payload truncated")
-                decoded_valid = np.frombuffer(raw, dtype=np.float32).copy()
-            else:
-                decoded_valid = np.zeros(0, dtype=np.float32)
-        else:
-            payload = c.residual_payload
-            if len(payload) < 8:
-                raise ValueError("residual payload too short")
-            (ent_len,) = struct.unpack_from("<Q", payload, 0)
-            symbols = decode_symbols(payload[8 : 8 + ent_len], n_valid)
-            repair_positions, repair_values, _ = unpack_repairs(payload, 8 + ent_len)
-            # --- Causal scan (identical walk to encode) ------------------
-            prior = np.full(self.shape, 32.0, dtype=np.float32)
-            recon_rows = self._causal_scan_decode(
-                prior, mask, symbols, step, origin
-            )
-            decoded_valid = recon_rows.reshape(self.shape)[~mask]
-            if repair_positions.size:
-                decoded_valid[repair_positions] = repair_values
+        payload = c.residual_payload
+        if len(payload) < 8:
+            raise ValueError("residual payload too short")
+        (ent_len,) = struct.unpack_from("<Q", payload, 0)
+        symbols = decode_symbols(payload[8 : 8 + ent_len], n_valid)
+        repair_positions, repair_values, _ = unpack_repairs(payload, 8 + ent_len)
+        # --- Causal scan (identical walk to encode) ----------------------
+        prior = np.full(self.shape, 32.0, dtype=np.float32)
+        recon_rows = self._causal_scan_decode(prior, mask, symbols, step, origin)
+        decoded_valid = recon_rows.reshape(self.shape)[~mask]
+        if repair_positions.size:
+            decoded_valid[repair_positions] = repair_values
 
         field = np.empty(self.shape, dtype=np.float32)
         if n_valid:

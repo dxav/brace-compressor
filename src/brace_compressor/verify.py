@@ -3,8 +3,8 @@
 After a candidate encoding, the encoder simulates the exact decode path,
 measures per-element error against the bound, and repairs any violating
 elements by escalating precision for them (exact float32 correction).
-The bound thus cannot ship violated for any positive bound. Bound zero uses
-the codec's raw float32 path and never enters this loop.
+The bound thus cannot ship violated beyond the effective bound. Bounds at or
+below float32 epsilon use that epsilon as the effective budget.
 """
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ def verify_and_repair(orig_valid, decoded_valid, error_bound, repair_fn=None):
     Args:
         orig_valid: original valid values (float32 array).
         decoded_valid: values reconstructed exactly as the decoder would.
-        error_bound: positive absolute error bound. Bound zero uses the exact
-            raw float32 path and never calls this function.
+        error_bound: effective positive absolute error bound, including the
+            float32-epsilon floor used for a requested zero bound.
         repair_fn: optional callables registry, unused in v1 (kept for
             forward-compatible escalation hooks).
 

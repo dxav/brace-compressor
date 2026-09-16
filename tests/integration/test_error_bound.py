@@ -58,17 +58,16 @@ def test_metrics_reported():
     assert m["bound_respected"] is True
 
 
-def test_bound_zero_is_tightest_and_may_be_lossy():
+def test_bound_zero_uses_near_lossless_epsilon_mode():
     field, _ = make_smooth_field()
     codec = BraceCodec(shape=DEFAULT_SHAPE, error_bound=0.0)
     enc = codec.encode(field)
     dec = codec.decode(enc)
-    # FR-003 exemption: output may be lossy; it must simply decode validly.
     assert dec.shape == DEFAULT_SHAPE
-    # Bound=0 produces the tightest available representation; smaller than
-    # the tightest *quantized* bound-0.01 payload is NOT required, but the
-    # mask must still be exact.
     assert np.array_equal(np.isnan(dec), np.isnan(field))
+    valid = ~np.isnan(field)
+    effective_bound = np.finfo(np.float32).eps
+    assert np.max(np.abs(dec[valid] - field[valid])) <= effective_bound
 
 
 def test_decode_single_element_grid():
