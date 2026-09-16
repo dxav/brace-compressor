@@ -66,7 +66,7 @@ Synthetic field:
 
 Real NetCDF field:
 
-The repository does not include the challenge dataset. Download and prepare
+The repository does not include the reference dataset. Download and prepare
 the benchmark input as described in the [README](../README.md), or run:
 
 ```bash

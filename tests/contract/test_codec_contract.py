@@ -59,7 +59,7 @@ def test_encode_decode_buffer_contract(codec_factory, smooth_field):
     np.testing.assert_array_equal(ret, dec)
 
 
-def test_two_dimensional_challenge_slice_roundtrip():
+def test_two_dimensional_slice_roundtrip():
     field = np.array([[1.0, np.nan], [2.0, 3.0]], dtype=np.float32)
     codec = BraceCodec(shape=field.shape, error_bound=0.05)
     encoded = codec.encode(field)

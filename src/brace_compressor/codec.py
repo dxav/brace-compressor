@@ -44,7 +44,7 @@ _MODE_QUANTIZED = 0
 class BraceCodec:
     """Error-bounded reconstructed-neighbor codec for HOAPS wvpa gridded fields.
 
-    Both 2-D ``(lat, lon)`` challenge slices and 3-D ``(time, lat, lon)``
+    Both 2-D ``(lat, lon)`` slices and 3-D ``(time, lat, lon)``
     fields are accepted. Two-dimensional inputs are encoded as one time slice.
 
     Implements the numcodecs ``Codec`` contract: ``codec_id``, ``encode``,
