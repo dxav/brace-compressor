@@ -6,13 +6,14 @@ root with the project venv:
 
     .venv/bin/python scripts/compress_stats.py
     .venv/bin/python scripts/compress_stats.py --shape 8 90 180 --bound 0.05
-    .venv/bin/python scripts/compress_stats.py --input field.npy --bound 0.01
+    .venv/bin/python scripts/compress_stats.py --input field.nc --bound 0.01
     .venv/bin/python scripts/compress_stats.py --sweep 0.01 0.05 0.2 --shape 4 32 64
 
 The script needs no real HOAPS data: without ``--input`` it generates a
 smooth space-time synthetic field (deterministic seed) with a land-strip
-missing mask, mimicking HOAPS wvpa statistics. With ``--input`` it loads
-a ``.npy`` (2-D lat×lon treated as a single time slice, or 3-D time×lat×lon).
+missing mask, mimicking HOAPS wvpa statistics. With ``--input`` it loads a
+``.npy`` or NetCDF file. NetCDF input uses the ``wvpa`` variable by default;
+2-D lat×lon input is promoted to a single time slice.
 
 Reported statistics include sizes and compression ratio (CR), the
 verified maximum absolute error vs the configured bound (SC-001),
@@ -67,9 +68,28 @@ def generate_synthetic_field(
     return np.where(mask, np.nan, field).astype(np.float32), mask
 
 
-def load_field(path: Path) -> np.ndarray:
-    """Load a .npy field; 2-D input is promoted to a single time slice."""
-    field = np.load(path).astype(np.float32)
+def load_field(path: Path, variable: str = "wvpa") -> np.ndarray:
+    """Load a NumPy or NetCDF field; promote 2-D input to one time slice."""
+    if path.suffix.lower() in {".nc", ".nc4", ".netcdf"}:
+        try:
+            import xarray as xr
+        except ImportError as exc:
+            raise SystemExit(
+                "NetCDF input requires xarray and h5netcdf; install with "
+                "`.venv/bin/python -m pip install -e '.[analysis]'`"
+            ) from exc
+        try:
+            with xr.open_dataset(path, engine="h5netcdf") as dataset:
+                if variable not in dataset:
+                    available = ", ".join(dataset.data_vars)
+                    raise SystemExit(
+                        f"NetCDF variable {variable!r} not found; available: {available}"
+                    )
+                field = dataset[variable].values.astype(np.float32)
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"could not read NetCDF input {path}: {exc}") from exc
+    else:
+        field = np.load(path).astype(np.float32)
     if field.ndim == 2:
         field = field[None, ...]
     if field.ndim != 3:
@@ -286,7 +306,11 @@ def main() -> None:
     )
     p.add_argument(
         "--input", type=Path, default=None,
-        help="Optional .npy field (2-D or 3-D float); default: synthetic HOAPS-like field",
+        help="Optional .npy or NetCDF field; default: synthetic HOAPS-like field",
+    )
+    p.add_argument(
+        "--variable", default="wvpa",
+        help="NetCDF variable to compress (default: wvpa)",
     )
     p.add_argument(
         "--shape", type=int, nargs=3, metavar=("T", "LAT", "LON"), default=[8, 90, 180],
@@ -316,7 +340,7 @@ def main() -> None:
     args = p.parse_args()
 
     if args.input is not None:
-        field = load_field(args.input)
+        field = load_field(args.input, variable=args.variable)
     else:
         field, _ = generate_synthetic_field(
             tuple(args.shape), seed=args.seed, missing_frac=args.missing_frac

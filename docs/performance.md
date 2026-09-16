@@ -1,11 +1,11 @@
 # Performance Report
 
-Measurements were taken on 2026-09-16 with Python 3.12, the bundled
-`data/wvpa_2020-08-01_07.npy` sample, and the repository benchmark:
+Measurements were taken on 2026-09-16 with Python 3.12, the downloaded
+`data/HOAPS_2020-08_6-hourly.nc` sample, and the repository benchmark:
 
 ```bash
 .venv/bin/python scripts/compress_stats.py \
-  --input data/wvpa_2020-08-01_07.npy --sweep 0.01 0.05 0.2
+   --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa --sweep 0.01 0.05 0.2
 ```
 
 The sample has shape `(28, 320, 720)`, 6,451,200 cells, 68.7% missing

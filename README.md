@@ -6,15 +6,10 @@
 [![Rust](https://img.shields.io/badge/optional%20accelerator-Rust-orange.svg?logo=rust)](rust/brace_scan)
 
 **BRACE** (*Bounded Residual Adaptive Compression Engine*) is an error-bounded,
-lossless-symbol `numcodecs` codec for
-HOAPS water-vapor (`wvpa`) climate fields. It compresses two-dimensional
+lossless-symbol codec for climate data. It compresses two-dimensional
 `(latitude, longitude)` slices or three-dimensional float32 arrays with shape
 `(time, latitude, longitude)` using a deterministic reconstructed-neighbor
-predictor, bound-derived residual quantization,
-and lossless entropy coding.
-
-An optional Rust extension accelerates
-the scan; the Python implementation remains the fallback.
+predictor, bound-derived residual quantization, and lossless entropy coding.
 
 ## Guarantees
 
@@ -60,23 +55,6 @@ config = codec.get_config()
 codec_copy = BraceCodec.from_config(config)
 ```
 
-For the compression-lab missing-values challenge, a selected 2-D xarray slice
-can be passed directly using the same `numcodecs` interface:
-
-```python
-field = da.values.astype("float32", copy=False)
-codec = BraceCodec(shape=field.shape, error_bound=1.0, missing_value="nan")
-encoded = codec.encode(field)
-decoded = codec.decode(encoded, out=np.empty(field.shape, dtype="float32"))
-
-assert np.array_equal(np.isfinite(decoded), np.isfinite(field))
-assert np.max(np.abs(decoded[np.isfinite(field)] - field[np.isfinite(field)])) <= 1.0
-compression_ratio = field.nbytes / np.asarray(encoded).nbytes
-```
-
-Two-dimensional inputs are encoded internally as a single time slice, while
-the output buffer keeps its original 2-D shape.
-
 The class implements `codec_id`, `encode`, `decode`, `get_config`, and
 `from_config` for `numcodecs` integration. Importing `brace_compressor`
 registers the `brace-wvpa` codec with the registry.
@@ -93,14 +71,25 @@ unrelated installed package named `tests`.
 
 ## Measure compression ratio
 
-The bundled real sample is a `(28, 320, 720)` HOAPS-like field:
+The repository does not include the challenge dataset. Download the public
+NetCDF source with:
+
+```bash
+.venv/bin/python -m pip install -e ".[analysis]"
+mkdir -p data
+curl -L --fail --output data/HOAPS_2020-08_6-hourly.nc \
+  https://object-store.os-api.cci1.ecmwf.int/esiwacebucket/HOAPS/HOAPS_2020-08_6-hourly.nc
+```
+
+The downloaded NetCDF file is ignored by Git. Run the benchmark directly on
+the `wvpa` variable with:
 
 ```bash
 .venv/bin/python scripts/compress_stats.py \
-  --input data/wvpa_2020-08-01_07.npy --bound 0.05
+  --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa --bound 0.05
 
 .venv/bin/python scripts/compress_stats.py \
-  --input data/wvpa_2020-08-01_07.npy --sweep 0.01 0.05 0.2
+  --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa --sweep 0.01 0.05 0.2
 ```
 
 The benchmark performs encode and decode, independently checks the bound and

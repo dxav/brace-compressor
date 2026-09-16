@@ -64,18 +64,25 @@ Synthetic field:
   --shape 8 90 180 --bound 0.05
 ```
 
-Real NumPy field:
+Real NetCDF field:
+
+The repository does not include the challenge dataset. Download and prepare
+the benchmark input as described in the [README](../README.md), or run:
 
 ```bash
+.venv/bin/python -m pip install -e ".[analysis]"
+mkdir -p data
+curl -L --fail --output data/HOAPS_2020-08_6-hourly.nc \
+  https://object-store.os-api.cci1.ecmwf.int/esiwacebucket/HOAPS/HOAPS_2020-08_6-hourly.nc
 .venv/bin/python scripts/compress_stats.py \
-  --input data/wvpa_2020-08-01_07.npy --bound 0.05
+  --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa --bound 0.05
 ```
 
 Bound sweep:
 
 ```bash
 .venv/bin/python scripts/compress_stats.py \
-  --input data/wvpa_2020-08-01_07.npy --sweep 0.01 0.05 0.2
+  --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa --sweep 0.01 0.05 0.2
 ```
 
 The benchmark independently checks maximum valid-value error, mask identity,
