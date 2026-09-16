@@ -71,8 +71,7 @@ unrelated installed package named `tests`.
 
 ## Measure compression ratio
 
-The repository does not include the challenge dataset. Download the public
-NetCDF source with:
+Download a public test NetCDF dataset with:
 
 ```bash
 .venv/bin/python -m pip install -e ".[analysis]"
@@ -81,8 +80,7 @@ curl -L --fail --output data/HOAPS_2020-08_6-hourly.nc \
   https://object-store.os-api.cci1.ecmwf.int/esiwacebucket/HOAPS/HOAPS_2020-08_6-hourly.nc
 ```
 
-The downloaded NetCDF file is ignored by Git. Run the benchmark directly on
-the `wvpa` variable with:
+Run the benchmark on the `wvpa` variable with:
 
 ```bash
 .venv/bin/python scripts/compress_stats.py \
@@ -113,13 +111,9 @@ documentation, and design decisions.
 - [Algorithm](docs/algorithm.md): predictor, quantization, entropy coding,
   repairs, complexity, and guarantees.
 - [Architecture](docs/architecture.md): component boundaries and pipeline.
-- [Container/API contract](specs/001-brace-wvpa-compressor/contracts/codec-api.md):
-  public API and binary framing.
 - [Development guide](docs/development.md): installation, Rust build, tests,
   benchmarks, and compatibility discipline.
 - [Performance report](docs/performance.md): measured CR and timings.
-- [Data model](specs/001-brace-wvpa-compressor/data-model.md): stream and
-  intermediate entities.
 - [Compression analysis](docs/cr_optimization_analysis.md): why the current
   stencil and entropy modes were selected.
 
@@ -137,13 +131,7 @@ rust/brace_scan/            optional bit-exact Rust scan
 scripts/                    benchmark and entropy-analysis utilities
 tests/                      unit, contract, and integration tests
 docs/                       human-facing algorithm and operations docs
-specs/                      stable API/data-model requirements
 ```
-
-Large source datasets, local benchmark reports, virtual environments, build
-outputs, and Python caches are intentionally excluded from version control.
-The included notebook uses the challenge S3 dataset through
-`open_remote_dataset` when data access is available.
 
 ## Contributing and license
 
