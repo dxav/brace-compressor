@@ -2,7 +2,7 @@
 
 ## Problem and guarantees
 
-The input is a contiguous `float32` array with shape `(T, H, W)`. The codec
+The input is a contiguous `float32` or `float64` array with shape `(T, H, W)`. The codec
 is lossy for `error_bound > 0`, but guarantees for every valid cell:
 
 ```
@@ -12,7 +12,10 @@ abs(decoded - original) <= error_bound
 The missing-value mask is lossless. Missing cells are not predicted or
 quantized; their configured sentinel is restored after decoding. Non-finite
 values are treated as missing. A zero or sub-epsilon bound uses the same
-quantized path as positive bounds. It is near-lossless, but can differ by floating-point computation error. Float64 inputs are converted to float32 at the codec boundary, and missing values use the configured sentinel.
+quantized path as positive bounds, with the configured dtype's machine epsilon
+as the floor. It is near-lossless, but can differ by floating-point computation
+error. The selected dtype is stored in container metadata and controls
+reconstruction, repairs, and output validation.
 
 ## 1. Mask extraction
 
@@ -48,8 +51,9 @@ The longitude-local stencil is:
 | temporal parent `(t-1,y,x)` | 1 | `t > 0` and reconstructed value is nonzero |
 
 The Rust extension implements the same arithmetic and scan order as the
-Python fallback. The codec uses Rust when the extension is importable and
-otherwise remains functional in Python.
+Python fallback for both float32 and float64. The codec uses the matching Rust
+entry point when the extension is importable and otherwise remains functional
+in Python.
 
 ## 3. Residual quantization
 
@@ -95,12 +99,13 @@ empty residual payload.
 
 After the scan, the encoder compares the simulated decoded valid values
 with the original valid values. Any position whose error exceeds the bound is
-written to a repair map as `(valid_index, exact_float32_value)`.
+written to a repair map as `(valid_index, exact_value)`, where the value uses
+the configured dtype.
 
 The repair map is appended to the residual payload. During decode, repairs are
 applied after symbol reconstruction. Thus the returned stream cannot leave a
-positive-bound violation unless float32 itself cannot represent the requested
-comparison, which is outside the codec's value domain.
+positive-bound violation unless the configured dtype itself cannot represent
+the requested comparison, which is outside the codec's value domain.
 
 ## 6. Container and outer compression
 

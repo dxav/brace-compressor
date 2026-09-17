@@ -7,8 +7,8 @@
 
 **BRACE** (*Bounded Residual Adaptive Compression Engine*) is an error-bounded,
 lossless-symbol codec for climate data. It compresses two-dimensional
-`(latitude, longitude)` slices or three-dimensional float32 arrays with shape
-`(time, latitude, longitude)` using a deterministic reconstructed-neighbor
+`(latitude, longitude)` slices or three-dimensional float32/float64 arrays with
+shape `(time, latitude, longitude)` using a deterministic reconstructed-neighbor
 predictor, bound-derived residual quantization, and lossless entropy coding.
 
 ## Guarantees
@@ -19,9 +19,12 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   without loss.
 - Entropy coding is bit-exact, so decoded symbols match encoded symbols.
 - Rust and Python scans use the same order and arithmetic.
-- `error_bound=0` uses the same quantized path as positive bounds, with
-  `float32` machine epsilon as the minimum effective error budget. It is
-  therefore near-lossless but can differ by floating-point computation error.
+- `error_bound=0` uses the same quantized path as positive bounds, with the
+  configured dtype's machine epsilon as the minimum effective error budget.
+  It is therefore near-lossless but can differ by floating-point computation
+  error.
+- Supported value dtypes are explicitly selected with `dtype="float32"` or
+  `dtype="float64"`; the dtype is recorded in container metadata.
 
 ## Codec features
 
@@ -43,16 +46,16 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   `|residual| <= 8`, or larger. This models local residual behavior without a
   trained model or external table file.
 - **Verify-and-repair:** the encoder simulates the decoder, checks the actual
-  reconstructed values, and records exact float32 repairs for any positions
-  that exceed the requested positive bound.
+  reconstructed values, and records exact repairs in the configured dtype for
+  any positions that exceed the requested positive bound.
 - **Self-describing integrity-checked container:** the HWPC container records
   model metadata, payload lengths, compression flags, and a CRC-32 checksum.
 - **Optional Zstandard pass:** mask and residual payloads can be compressed
   independently with Zstandard when that reduces their size; this pass is
   lossless and does not replace the residual entropy modes.
-- **Optional Rust acceleration:** the causal scan has a bit-exact Rust
-  implementation with a Python fallback, while entropy coding remains fully
-  deterministic.
+- **Optional Rust acceleration:** the causal scan has bit-exact Rust
+  implementations for both float32 and float64, with a Python fallback, while
+  entropy coding remains fully deterministic.
 
 ## Install
 
@@ -90,6 +93,9 @@ codec_copy = BraceCodec.from_config(config)
 `BraceCodec` inherits from `numcodecs.abc.Codec` and implements `codec_id`,
 `encode`, `decode`, `get_config`, and `from_config`. Importing
 `brace_compressor` registers the `brace` codec with the registry.
+
+Use `dtype="float64"` to preserve float64 input precision and decode into a
+float64 output buffer. Existing float32 streams remain the default format.
 
 ## Run tests
 

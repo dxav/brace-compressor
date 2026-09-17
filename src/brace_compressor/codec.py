@@ -35,6 +35,14 @@ try:
 except Exception:  # pragma: no cover - extension optional
     _HAS_RUST = False
 
+try:
+    from brace_scan import causal_scan_decode_f64 as _rs_scan_decode_f64
+    from brace_scan import causal_scan_encode_f64 as _rs_scan_encode_f64
+
+    _HAS_RUST_F64 = True
+except Exception:  # pragma: no cover - older extension without f64 API
+    _HAS_RUST_F64 = False
+
 MODEL_VERSION = 3
 CODEC_VERSION = "0.1.0"
 OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass
@@ -252,7 +260,7 @@ class BraceCodec(Codec):
             symbols,
             step,
             origin,
-            use_rust=self.dtype == np.dtype("float32"),
+            use_rust=self.dtype in {np.dtype("float32"), np.dtype("float64")},
         )
         decoded_valid = recon_rows.reshape(self.shape)[~mask]
         if repair_positions.size:
@@ -289,6 +297,14 @@ class BraceCodec(Codec):
                 np.ascontiguousarray(field, dtype=np.float32),
                 np.ascontiguousarray(mask),
                 np.ascontiguousarray(prior, dtype=np.float32),
+                float(step),
+            )
+            return symbols, recon_rows, 0.0
+        if _HAS_RUST_F64 and self.dtype == np.dtype("float64"):
+            symbols, recon_rows = _rs_scan_encode_f64(
+                np.ascontiguousarray(field, dtype=np.float64),
+                np.ascontiguousarray(mask),
+                np.ascontiguousarray(prior, dtype=np.float64),
                 float(step),
             )
             return symbols, recon_rows, 0.0
@@ -353,6 +369,14 @@ class BraceCodec(Codec):
         if _HAS_RUST and use_rust and self.dtype == np.dtype("float32"):
             return _rs_scan_decode(
                 np.ascontiguousarray(prior, dtype=np.float32),
+                np.ascontiguousarray(mask),
+                np.ascontiguousarray(symbols, dtype=np.int64),
+                float(step),
+                float(origin),
+            )
+        if _HAS_RUST_F64 and use_rust and self.dtype == np.dtype("float64"):
+            return _rs_scan_decode_f64(
+                np.ascontiguousarray(prior, dtype=np.float64),
                 np.ascontiguousarray(mask),
                 np.ascontiguousarray(symbols, dtype=np.int64),
                 float(step),
