@@ -22,6 +22,7 @@ from .mask import apply_mask, extract_mask, pack_mask, unpack_mask
 from .model.entropy import decode_symbols, pack_repairs, unpack_repairs
 from .model.entropy import encode_symbols as _entropy_encode
 from .quant import derive_step
+from .recommendations import recommend_error_bound
 from .verify import verify_and_repair
 
 # Optional Rust-accelerated scan (bit-exact port of the Python
@@ -87,6 +88,18 @@ class BraceCodec(Codec):
             raise ValueError("error_bound_mode must be 'absolute' or 'relative'")
         self.error_bound_mode = error_bound_mode
         self.last_timings: dict[str, float] = {}
+
+    @classmethod
+    def from_recommendation(cls, *, shape, variable: str, **kwargs) -> "BraceCodec":
+        """Create a codec using the typed recommendation for ``variable``."""
+
+        recommendation = recommend_error_bound(variable)
+        return cls(
+            shape=shape,
+            error_bound=recommendation.value,
+            error_bound_mode=recommendation.mode,
+            **kwargs,
+        )
 
     # ------------------------------------------------------------------
     # Configuration contract (numcodecs.Codec)

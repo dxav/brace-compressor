@@ -25,6 +25,7 @@ dependencies = [
     "numpy>=1.26",
     "numcodecs>=0.12",
     "zstandard>=0.22",
+    "compression-recommendations~=0.1.0a2",
 ]
 
 [project.urls]

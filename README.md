@@ -126,6 +126,24 @@ codec = BraceCodec(
 )
 ```
 
+Recommendations from the typed `compression-recommendations` package can be
+applied directly. Pointwise-relative bounds are preferred when available;
+otherwise the adapter selects a pointwise absolute bound.
+
+```python
+from brace_compressor import BraceCodec
+
+codec = BraceCodec.from_recommendation(
+  shape=shape,
+  variable="cc",
+  dtype="float32",
+)
+```
+
+`recommend_error_bound("cc")` returns the selected mode and value as an
+`ErrorBoundRecommendation`. Requirements with other semantics, such as
+range-relative bounds, are not silently reinterpreted.
+
 To disable the final lossless Zstandard pass explicitly:
 
 ```python
