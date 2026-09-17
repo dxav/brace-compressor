@@ -23,7 +23,11 @@ from .mask import apply_mask, extract_mask, pack_mask, unpack_mask
 from .model.entropy import decode_symbols, pack_repairs, unpack_repairs
 from .model.entropy import encode_symbols as _entropy_encode
 from .quant import derive_step
-from .recommendations import plan_recommendation, recommend_error_bound
+from .recommendations import (
+    ErrorBoundRecommendation,
+    plan_recommendation,
+    recommend_error_bound,
+)
 from .verify import verify_and_repair
 
 # Optional Rust-accelerated scan (bit-exact port of the Python
@@ -110,7 +114,20 @@ class BraceCodec(Codec):
             markers=markers,
             recommendations=recommendations,
         )
-        recommendation = plan.pointwise_error_bound()
+        try:
+            recommendation = plan.pointwise_error_bound()
+        except KeyError:
+            recommendation = ErrorBoundRecommendation(mode="absolute", value=0.0)
+            if not any(
+                node.kind
+                in {
+                    "max-pointwise-range-relative-error-bound",
+                    "mean-range-relative-error-bound",
+                    "max-pointwise-quadratic-error-bound",
+                }
+                for node in plan.selected
+            ):
+                raise
         codec = cls(
             shape=shape,
             error_bound=recommendation.value,
@@ -191,6 +208,22 @@ class BraceCodec(Codec):
         mask_time = time.perf_counter() - stage_start
 
         bound = self.error_bound
+        if self.recommendation_plan is not None and any(
+            node.kind
+            in {
+                "max-pointwise-range-relative-error-bound",
+                "mean-range-relative-error-bound",
+            }
+            for node in self.recommendation_plan.selected
+        ):
+            bound = self.recommendation_plan.range_relative_error_bound(field).value
+            self.error_bound = bound
+        if self.recommendation_plan is not None and any(
+            node.kind == "max-pointwise-quadratic-error-bound"
+            for node in self.recommendation_plan.selected
+        ):
+            bound = self.recommendation_plan.quadratic_error_bound(field).value
+            self.error_bound = bound
         relative = self.error_bound_mode == "relative"
         effective_bound = max(bound, float(np.finfo(self.dtype).eps))
         zero_mask = np.zeros(self.shape, dtype=bool)

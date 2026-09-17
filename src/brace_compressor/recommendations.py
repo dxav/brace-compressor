@@ -118,6 +118,60 @@ class RecommendationPlan:
             mode="absolute", value=min(value for _, value in candidates)
         )
 
+    def range_relative_error_bound(self, data) -> ErrorBoundRecommendation:
+        """Resolve a range-relative requirement into an absolute bound."""
+
+        import numpy as np
+
+        candidates = tuple(
+            float(node.value)
+            for node in self.selected
+            if node.kind
+            in {
+                "max-pointwise-range-relative-error-bound",
+                "mean-range-relative-error-bound",
+            }
+            and isinstance(node.value, (int, float))
+        )
+        if not candidates:
+            raise KeyError("selected recommendation has no range-relative bound")
+        finite = np.asarray(data)[np.isfinite(data)]
+        data_range = float(np.ptp(finite)) if finite.size else 0.0
+        return ErrorBoundRecommendation(
+            mode="absolute", value=data_range * min(candidates)
+        )
+
+    def quadratic_error_bound(self, data) -> ErrorBoundRecommendation:
+        """Resolve a quadratic requirement into a conservative bound."""
+
+        import numpy as np
+
+        candidates = tuple(
+            node
+            for node in self.selected
+            if node.kind == "max-pointwise-quadratic-error-bound"
+            and isinstance(node.value, (int, float))
+            and node.minimum is not None
+            and node.maximum is not None
+        )
+        if not candidates:
+            raise KeyError("selected recommendation has no quadratic bound")
+        values = np.asarray(data, dtype=np.float64)
+        bounds = []
+        for node in candidates:
+            minimum = float(node.minimum)
+            maximum = float(node.maximum)
+            if maximum <= minimum:
+                bounds.append(0.0)
+                continue
+            finite = values[np.isfinite(values)]
+            if np.any((finite <= minimum) | (finite >= maximum)):
+                bounds.append(0.0)
+                continue
+            scale = 1.0 - (2.0 * (finite - minimum) / (maximum - minimum) - 1.0) ** 2
+            bounds.append(float(np.min(scale)) * float(node.value))
+        return ErrorBoundRecommendation(mode="absolute", value=max(0.0, min(bounds)))
+
 
 @dataclass(frozen=True, slots=True)
 class ErrorBoundRecommendation:

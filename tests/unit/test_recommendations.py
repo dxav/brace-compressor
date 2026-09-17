@@ -2,6 +2,7 @@
 
 import pytest
 import numpy as np
+from compression_recommendations import Recommendations
 
 from brace_compressor.recommendations import (
     ErrorBoundRecommendation,
@@ -68,6 +69,38 @@ def test_codec_factory_records_plan_and_constraint_diagnostics():
     header = read_container(encoded).header_extra
 
     assert header["recommendation_plan"]["variable"] == "cc"
+    assert header["recommendation_checks"][0]["passed"]
+
+
+def test_range_relative_bound_is_resolved_from_source_data():
+    recommendations = Recommendations.from_config(
+        recommendations=[
+            {
+                "filters": [
+                    {"kind": "cf-short-name", "value": "x"},
+                    {"kind": "level-kind", "value": "pressure"},
+                ],
+                "requirements": [
+                    {
+                        "kind": "max-pointwise-range-relative-error-bound",
+                        "value": 0.1,
+                    }
+                ],
+            }
+        ],
+        version="0.1.0",
+        metadata={},
+    )
+    codec = BraceCodec.from_recommendation(
+        shape=(1, 1, 2),
+        variable="x",
+        dtype="float64",
+        recommendations=recommendations,
+    )
+
+    header = read_container(codec.encode(np.array([[[1.0, 3.0]]]))).header_extra
+
+    assert header["error_bound"] == pytest.approx(0.2)
     assert header["recommendation_checks"][0]["passed"]
 
 
