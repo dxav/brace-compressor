@@ -1,11 +1,11 @@
-"""Encoded-stream container framing (contracts/codec-api.md §3).
+"""BRCE (BRACE Container Encoding) stream framing.
 
 Layout (all little-endian):
 
 | Offset | Size | Field                                        |
 |--------|------|----------------------------------------------|
-| 0      | 4    | Magic b"HWPC"                                |
-| 4      | 2    | Container version (uint16, ABI 2)            |
+| 0      | 4    | Magic b"BRCE"                                |
+| 4      | 2    | Container version (uint16, ABI 3)            |
 | 6      | 2    | Flags (Zstandard payload compression selectors) |
 | 8      | 4    | Model version (uint32)                       |
 | 12     | 4    | Header-extra JSON length H (uint32)          |
@@ -26,8 +26,8 @@ from dataclasses import dataclass
 
 import zstandard
 
-MAGIC = b"HWPC"
-CONTAINER_VERSION = 2
+MAGIC = b"BRCE"
+CONTAINER_VERSION = 3
 
 # Flag 0x0001 means both payloads are Zstandard-compressed.
 # Flags 0x0002/0x0004 identify mask-only or residual-only compression.
@@ -136,7 +136,7 @@ def read_container(buf) -> Container:
         # Structural checks first (nicer errors than a bare CRC mismatch).
         magic, version = _HEADER_PREFIX.unpack(data[: _HEADER_PREFIX.size])[:2]
         if magic != MAGIC:
-            raise ContainerError(f"bad magic {magic!r}; not a HWPC container")
+            raise ContainerError(f"bad magic {magic!r}; not a BRCE container")
         if version != CONTAINER_VERSION:
             raise ContainerError(
                 f"unsupported container version {version}; "
@@ -145,7 +145,7 @@ def read_container(buf) -> Container:
 
     if len(data) < _HEADER_PREFIX.size + _CRC32.size:
         raise ContainerError(
-            f"encoded stream too short: {len(data)} bytes; not a HWPC container"
+            f"encoded stream too short: {len(data)} bytes; not a BRCE container"
         )
 
     crc_stored = _CRC32.unpack(data[-_CRC32.size:])[0]

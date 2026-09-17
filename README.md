@@ -40,7 +40,12 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   of 2048 symbols. The RANGE candidate selects fixed-width RAW integers or
   static byte rANS over zigzagged LEB128 values independently per block; the
   encoder also compares that payload with a whole-stream context-adaptive
-  rANS candidate over the residual-symbol alphabet.
+  rANS candidate over the residual-symbol alphabet. RAW stores integers at a
+  fixed 1-, 2-, 4-, or 8-byte width; RANGE is the varint-plus-rANS path; and
+  CTX is the context-adaptive rANS path.
+- **Compact integer coding:** LEB128 stores an integer in 7-bit groups, using
+  one continuation bit per byte. Zigzag encoding maps signed residuals so that
+  values near zero use the shortest LEB128 representation.
 - **Context-adaptive rANS:** the context mode selects one of three frequency
   tables from the previous residual's magnitude: `|residual| <= 1`,
   `|residual| <= 8`, or larger. This models local residual behavior without a
@@ -48,8 +53,10 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
 - **Verify-and-repair:** the encoder simulates the decoder, checks the actual
   reconstructed values, and records exact repairs in the configured dtype for
   any positions that exceed the requested positive bound.
-- **Self-describing integrity-checked container:** the HWPC container records
-  model metadata, payload lengths, compression flags, and a CRC-32 checksum.
+- **Self-describing integrity-checked container:** the BRCE format (BRACE
+  Container Encoding) records model metadata, payload lengths, compression
+  flags, and a CRC-32 checksum. Its four-byte wire magic is `BRCE`, and the
+  container version is 3.
 - **Optional Zstandard pass:** mask and residual payloads can be compressed
   independently with Zstandard when that reduces their size; this pass is
   lossless and does not replace the residual entropy modes. It is enabled by
@@ -57,13 +64,12 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   the benchmark CLI's `--no-outer-compress` option. Disabling it skips only
   this final Zstandard pass; entropy coding and lossless mask coding remain
   enabled.
-- **Optional Rust acceleration:** the causal scan has bit-exact Rust
-  implementations for both float32 and float64, with a Python fallback, while
-  entropy coding remains fully deterministic. There is no codec configuration
-  flag: when the compiled `brace_scan` extension is importable, the codec
-  automatically uses the matching Rust scan for the configured dtype. If the
-  extension is not installed or a matching symbol is unavailable, it uses the
-  Python scan instead.
+- **Optional Rust acceleration:** the causal scan and RAW/RANGE/CTX entropy
+  loops have bit-exact Rust implementations with Python fallbacks. There is
+  no codec configuration flag: when the compiled `brace_scan` extension is
+  importable, the codec automatically uses each matching Rust implementation.
+  If the extension or a matching symbol is unavailable, the corresponding
+  Python implementation is used instead.
 
 ## Install
 
@@ -191,7 +197,7 @@ src/brace_compressor/       Python package and codec implementation
   quant.py                  bound-derived quantization helpers
   model/entropy.py          RAW, RANGE, and context-rANS coding
   verify.py                 bound verification and exact repairs
-  container.py              HWPC framing, Zstandard flags, and CRC
+  container.py              BRCE framing, Zstandard flags, and CRC
 rust/brace_scan/            optional bit-exact Rust scan
 scripts/                    benchmark and entropy-analysis utilities
 tests/                      unit, contract, and integration tests

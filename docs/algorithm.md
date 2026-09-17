@@ -82,11 +82,24 @@ step and origin (`0.0` in the current codec).
 `model/entropy.py` encodes the `int64` symbols in blocks of 2048. Each block
 chooses the smallest lossless representation among:
 
-- `RAW`: fixed-width signed integers using 1, 2, 4, or 8 bytes;
-- `RANGE`: zigzag symbols, LEB128 varints, and static byte rANS;
-- `CTX`: context-adaptive rANS over the symbol alphabet, using one of three
+- **RAW**: fixed-width signed integers using 1, 2, 4, or 8 bytes. This is
+  useful when a block is cheaper to store directly than to entropy-code.
+- **RANGE**: signed residuals are first zigzag-encoded, then written as
+  LEB128 varints, and finally compressed as bytes with a static rANS model.
+  RANGE decisions are made independently for each 2048-symbol block.
+- **CTX**: context-adaptive rANS over the residual-symbol alphabet, using one of three
   frequency tables selected by the previous symbol magnitude (`<=1`, `<=8`,
   or larger).
+
+LEB128 is a variable-length integer encoding: each byte contributes seven data
+bits, while its high bit says whether another byte follows. Zigzag encoding
+maps signed values near zero to small unsigned values (`0, -1, 1, -2, 2` maps
+to `0, 1, 2, 3, 4`), making those values compact under LEB128.
+
+rANS means **range Asymmetric Numeral Systems**. It is a table-based entropy
+coder that represents frequent symbols with fewer bits than rare symbols. The
+RANGE path uses one static byte-frequency table; the CTX path selects one of
+three symbol-frequency tables from the preceding residual's magnitude.
 
 When the compiled `brace_scan` extension is available, both rANS variants are
 implemented in Rust and selected automatically by `model/entropy.py`. The
@@ -116,13 +129,17 @@ the requested comparison, which is outside the codec's value domain.
 
 ## 6. Container and outer compression
 
-The `HWPC` container stores:
+The **BRCE** format, short for **BRACE Container Encoding**, stores:
 
 1. magic, container version, flags, and scan ABI version;
 2. compact JSON metadata;
 3. mask payload length and payload;
 4. residual payload length and payload;
 5. CRC-32 over all preceding bytes.
+
+The on-disk magic is the four-byte ASCII value `BRCE`. Container version 3
+marks this format change; streams using the former `HWPC` magic are not
+accepted by the current reader.
 
 The optional outer pass is Zstandard and lossless. It is enabled by default by
 `BraceCodec`; pass `outer_compress=False` to skip it. The CLI benchmark exposes
