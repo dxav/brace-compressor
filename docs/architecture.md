@@ -1,15 +1,17 @@
 # BRACE Architecture
 
 The codec is a deterministic, error-bounded `numcodecs.Codec` for gridded
-floating-point data. It uses a reconstructed-neighbor spatial-temporal
-predictor and a lossless entropy coder; it has no runtime model or external model
-weights.
+`float32` and `float64` data. It accepts two-dimensional `(latitude, longitude)`
+fields and three-dimensional `(time, latitude, longitude)` fields; two-dimensional
+inputs are normalized internally to one time slice. It uses a
+reconstructed-neighbor spatial-temporal predictor and a lossless entropy coder;
+it has no runtime model or external model weights.
 
 ## Pipeline
 
 ```mermaid
 flowchart TB
-  A[float32 field] --> B[extract missing mask]
+  A[float32 or float64 field] --> B[extract missing mask]
   B --> C[scan: reconstructed neighbors]
   C --> D[quantize residuals]
   D --> E[lossless entropy coder]
@@ -22,8 +24,10 @@ flowchart TB
 The scan visits `(time, latitude, longitude)` in a fixed order. Each valid
 cell is predicted from already reconstructed left, top, diagonal, and
 temporal-parent cells. The longitude-local stencil is `(left 8, top 2,
-top-left 1, top-right 1, temporal 1)`. At a cold start the predictor uses a
-constant value of `32.0`, which is available identically to encode and decode.
+top-left 1, top-right 1, temporal 1)`. A reconstructed value of exactly zero
+is treated as unavailable for the left, top, and temporal neighbors. At a cold
+start the predictor uses a constant value of `32.0`, which is available
+identically to encode and decode.
 
 The encoder simulates the decoder state while quantizing. Decode repeats the
 same walk and therefore obtains the same prediction for every symbol. Rust
@@ -36,11 +40,20 @@ unavailable.
 
 ## Guarantees
 
-The quantization step is derived from the configured absolute error bound.
-The verifier reconstructs the decoder result and emits exact repairs for any
-outlier before the container is returned. Missing values are never predicted
-or quantized: their RLE-or-bitpacked mask is stored separately and the
-configured sentinel is restored exactly.
+The quantization step is `2 * max(error_bound, eps(dtype))`. The predictor is
+run identically by the encoder and decoder, so prediction error cancels and the
+quantization error consumes the configured absolute-error budget. The verifier
+reconstructs the decoder result and emits exact repairs for any outlier before
+the container is returned. Missing values are never predicted or quantized:
+their RLE-or-bitpacked mask is stored separately and the configured sentinel is
+restored exactly. Non-finite input values are always classified as missing.
+
+The encoded header records the normalized shape, dtype, missing-value policy,
+requested and effective error bounds, quantization step, origin, valid and
+repaired counts, codec version, and payload/error metrics. `BraceCodec.get_config()`
+also exposes the public codec id, shape, bound, missing value, dtype, and
+outer-compression setting; the configuration is JSON serializable and can be
+restored with `BraceCodec.from_config()`.
 
 ## Components
 
@@ -49,7 +62,7 @@ configured sentinel is restored exactly.
 - `quant.py`: bound-derived residual lattice.
 - `model/entropy.py`: lossless symbol coding.
 - `verify.py`: post-encode bound verification and repair.
-- `container.py`: versioned framing, optional outer compression, and CRC.
+- `container.py`: BRCE v3 framing, per-payload optional outer compression, and CRC.
 - `rust/brace_scan/src/scan.rs`: optional reconstructed-neighbor scan for
   float32 and float64, selected automatically when its compiled extension is
   importable.
@@ -57,3 +70,15 @@ configured sentinel is restored exactly.
   CTX rANS codecs, selected automatically by the entropy module.
 - `rust/brace_scan/src/lib.rs`: Python extension entry point that registers
   the scan and entropy bindings.
+
+## Runtime behavior
+
+Rust acceleration is optional and selected automatically per dtype. The
+extension provides float32 and float64 causal scan bindings plus static and
+context-adaptive rANS bindings. The Python implementations remain the
+reference fallback, and the encoded format is unchanged when Rust is absent.
+
+Each encode and decode records stage timings in `codec.last_timings`. Encode
+timings cover mask extraction, scan, verification, entropy coding, container
+framing, and the total; decode timings cover container parsing, mask unpacking,
+entropy decoding, scan, missing-value restoration, and the total.

@@ -10,6 +10,7 @@ lossless-symbol codec for climate data. It compresses two-dimensional
 `(latitude, longitude)` slices or three-dimensional float32/float64 arrays with
 shape `(time, latitude, longitude)` using a deterministic reconstructed-neighbor
 predictor, bound-derived residual quantization, and lossless entropy coding.
+Two-dimensional inputs are represented internally as one time slice.
 
 ## Guarantees
 
@@ -32,8 +33,9 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   already reconstructed left, vertical, diagonal, and temporal neighbors, so
   encoding and decoding follow the same predictor state.
 - **Bound-derived quantization:** residuals are quantized with a step of
-  approximately `2 * error_bound`, providing a compact integer residual stream
-  while preserving the configured absolute-error target through verification.
+  `2 * max(error_bound, eps(dtype))`, providing a compact integer residual
+  stream while preserving the configured absolute-error target through
+  verification.
 - **Lossless missing-value handling:** missing and non-finite cells are stored
   in an independent RLE or bit-packed mask and restored exactly after decode.
 - **Adaptive entropy mode selection:** valid residuals are processed in blocks
@@ -52,7 +54,7 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   trained model or external table file.
 - **Verify-and-repair:** the encoder simulates the decoder, checks the actual
   reconstructed values, and records exact repairs in the configured dtype for
-  any positions that exceed the requested positive bound.
+  any positions that exceed the effective bound.
 - **Self-describing integrity-checked container:** the BRCE format (BRACE
   Container Encoding) records model metadata, payload lengths, compression
   flags, and a CRC-32 checksum. Its four-byte wire magic is `BRCE`, and the
@@ -64,9 +66,10 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   the benchmark CLI's `--no-outer-compress` option. Disabling it skips only
   this final Zstandard pass; entropy coding and lossless mask coding remain
   enabled.
-- **Optional Rust acceleration:** the causal scan and RAW/RANGE/CTX entropy
-  loops have bit-exact Rust implementations with Python fallbacks. There is
-  no codec configuration flag: when the compiled `brace_scan` extension is
+- **Optional Rust acceleration:** the causal scan and RANGE/CTX rANS
+  primitives have bit-exact Rust implementations with Python fallbacks. RAW
+  packing, entropy-mode selection, and dispatch remain in Python. There is no
+  codec configuration flag: when the compiled `brace_scan` extension is
   importable, the codec automatically uses each matching Rust implementation.
   If the extension or a matching symbol is unavailable, the corresponding
   Python implementation is used instead.
@@ -162,10 +165,11 @@ Add `--no-outer-compress` to benchmark without the final Zstandard pass:
 ```
 
 The benchmark performs encode and decode, independently checks the bound and
-mask, and reports size, CR, RMSE, timing, and container metrics. The current
-observed ratios for that sample are approximately `12.50x`, `18.17x`, and
-`27.96x` at bounds `0.01`, `0.05`, and `0.2`, respectively. Treat benchmark
-values as machine- and build-dependent measurements.
+mask, and reports size, CR, RMSE, timing, and container metrics. In the
+current reference run, the ratios were `12.25x`, `17.78x`, and `27.60x` at
+bounds `0.01`, `0.05`, and `0.2`, respectively. See the
+[performance report](docs/performance.md) for the dataset, timings, and caveats;
+benchmark values are machine- and build-dependent measurements.
 
 ## Project status and acknowledgement
 
