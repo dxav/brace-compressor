@@ -134,6 +134,14 @@ def constraint_error_bounds(
                 bounds[applicable], requirement.maximum - original[applicable]
             )
         return bounds
+    if requirement.kind == "max-pointwise-absolute-error-bound":
+        return np.full(original.shape, float(requirement.value), dtype=np.float64)
+    if requirement.kind == "max-pointwise-relative-error-bound":
+        return np.abs(original.astype(np.float64)) * float(requirement.value)
+    if requirement.kind == "max-pointwise-range-relative-error-bound":
+        finite = original[np.isfinite(original)]
+        value_range = float(np.ptp(finite)) if finite.size else 0.0
+        return np.full(original.shape, value_range * float(requirement.value), dtype=np.float64)
     if requirement.kind == "isovalue":
         value = float(requirement.value)
         bounds = np.full(original.shape, np.inf, dtype=np.float64)

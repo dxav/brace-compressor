@@ -93,7 +93,7 @@ def measure_variable(name: str, data_array: xr.DataArray) -> dict[str, object]:
         "encode_seconds": encode_seconds,
         "decode_seconds": decode_seconds,
         "max_error": max_error,
-        "bound_violations": int(violations.sum()),
+        "scalar_reference_violations": int(violations.sum()),
         "zero_mismatches": int(np.count_nonzero((original == 0) != (decoded == 0))),
         "selected_requirements": header.get("recommendation_plan", {}).get("selected", []),
         "strategy": header.get("strategy"),
@@ -121,7 +121,7 @@ def main() -> None:
                 f"bound={result['bound']:g} "
                 f"CR={result['compression_ratio']:.3f}x "
                 f"max_error={result['max_error']:.6g} "
-                f"violations={result['bound_violations']} "
+                f"scalar_violations={result['scalar_reference_violations']} "
                 f"strategy={result['strategy']} "
                 f"requirements={'pass' if result['all_requirements_passed'] else 'FAIL'}"
             )

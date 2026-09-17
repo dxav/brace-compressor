@@ -199,6 +199,7 @@ class BraceCodec(Codec):
             node.kind == "mean-relative-error-bound" for node in plan.selected
         ):
             base_bound = recommendation.value * math.sqrt(max(1, int(np.prod(shape))))
+        explicit_base_mode = "error_bound_mode" in kwargs
         base_mode = kwargs.pop("error_bound_mode", recommendation.mode)
         codec = cls(
             shape=shape,
@@ -207,6 +208,8 @@ class BraceCodec(Codec):
             **kwargs,
         )
         codec.recommendation_plan = plan
+        codec._recommendation_explicit_bound = explicit_base_bound
+        codec._recommendation_explicit_mode = explicit_base_mode
         return codec
 
     # ------------------------------------------------------------------
@@ -277,6 +280,14 @@ class BraceCodec(Codec):
             node.kind == "any" for node in self.recommendation_plan.requirements
         ):
             self.recommendation_plan = self.recommendation_plan.select_for_data(field)
+            if not getattr(self, "_recommendation_explicit_bound", False):
+                try:
+                    selected_bound = self.recommendation_plan.pointwise_error_bound()
+                    self.error_bound = selected_bound.value
+                    if not getattr(self, "_recommendation_explicit_mode", False):
+                        self.error_bound_mode = selected_bound.mode
+                except KeyError:
+                    pass
         if self.recommendation_plan is not None and any(
             node.kind == "lossless" for node in self.recommendation_plan.selected
         ):

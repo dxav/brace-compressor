@@ -408,6 +408,35 @@ def test_all_recommendation_constraints_are_verified_together():
     assert all(child["passed"] for child in check["children"])
 
 
+def test_all_mean_and_pointwise_constraints_both_remain_enforced():
+    original = np.linspace(-100.0, 100.0, 513, dtype=np.float64).reshape(1, 1, 513)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=make_recommendations(
+            [
+                {
+                    "kind": "all",
+                    "requirements": [
+                        {"kind": "mean-absolute-error-bound", "value": 5.0},
+                        {"kind": "max-pointwise-absolute-error-bound", "value": 10.0},
+                    ],
+                }
+            ]
+        ),
+    )
+
+    encoded = codec.encode(original)
+    check = read_container(encoded).header_extra["recommendation_checks"][0]
+    children = {child["kind"]: child for child in check["children"]}
+
+    assert check["passed"]
+    assert children["mean-absolute-error-bound"]["passed"]
+    assert children["max-pointwise-absolute-error-bound"]["passed"]
+    assert children["max-pointwise-absolute-error-bound"]["metric"] <= 10.0
+
+
 def test_any_recommendation_selects_one_supported_branch():
     plan = plan_recommendation(
         "x",
@@ -456,6 +485,32 @@ def test_any_recommendation_uses_data_scale_for_encoding_branch():
     selected = read_container(encoded).header_extra["recommendation_plan"]["selected"]
 
     assert selected[0]["kind"] == "max-pointwise-absolute-error-bound"
+
+
+def test_data_selected_any_branch_updates_codec_mode_and_bound():
+    original = np.array([[[1.0, 1.5, 2.0]]], dtype=np.float32)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float32",
+        recommendations=make_recommendations(
+            [
+                {
+                    "kind": "any",
+                    "requirements": [
+                        {"kind": "max-pointwise-relative-error-bound", "value": 0.1},
+                        {"kind": "max-pointwise-absolute-error-bound", "value": 2.0},
+                    ],
+                }
+            ]
+        ),
+    )
+
+    header = read_container(codec.encode(original)).header_extra
+
+    assert header["error_bound_mode"] == "absolute"
+    assert header["error_bound"] == pytest.approx(2.0)
+    assert header["recommendation_checks"][0]["passed"]
 
 
 def test_plan_preserves_all_requirements_and_selects_relative_any_branch():
