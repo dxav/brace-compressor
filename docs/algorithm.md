@@ -4,8 +4,8 @@
 
 The input is a contiguous `float32` or `float64` array with shape `(T, H, W)`.
 The public API also accepts `(H, W)`, represented internally as one time
-slice. The codec is lossy for `error_bound > 0`, but guarantees for every
-valid cell:
+slice. In absolute mode, the codec is lossy for `error_bound > 0`, but
+guarantees for every valid cell:
 
 ```
 abs(decoded - original) <= error_bound
@@ -19,6 +19,19 @@ as the floor. It is near-lossless, but can differ by floating-point computation
 error. The selected dtype is stored in container metadata and controls
 reconstruction, repairs, and output validation. Any non-finite input is
 treated as missing.
+
+`error_bound_mode="absolute"` is the default and applies one absolute bound
+to every valid value. With `error_bound_mode="relative"`, every nonzero valid
+value is required to satisfy:
+
+```
+abs(decoded - original) <= error_bound * abs(original)
+```
+
+Relative mode uses the dtype epsilon as the floor for a requested zero bound.
+Zeros are represented exactly, and the sign of every nonzero value is stored
+losslessly. Relative mode is encoded in log-magnitude space and uses additional
+zero and sign mask sections in the container.
 
 ## 1. Mask extraction
 
@@ -81,6 +94,18 @@ The simulated decoded value is `p + s*Delta + origin`, with `origin = 0.0` in
 the current codec. Symbols are clamped to a signed 32-bit-safe range before the
 offset is applied. The decoder reverses the offset, so the quantization error
 is at most `Delta/2`, apart from floating-point edge cases.
+
+For relative mode, the scan input is `log(abs(v))` plus a fixed offset, and the
+step is:
+
+```
+Delta_relative = 2 * log1p(max(error_bound, eps(d)))
+```
+
+The decoded magnitude is `exp(decoded_log - offset)`. Half a step in log space
+is `log1p(relative_bound)`, so the multiplicative error is bounded by the
+requested relative bound apart from floating-point edge cases. Exact zeros and
+signs are restored from the additional lossless masks.
 
 ## 4. Lossless entropy coding
 

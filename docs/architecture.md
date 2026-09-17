@@ -48,6 +48,11 @@ the container is returned. Missing values are never predicted or quantized:
 their RLE-or-bitpacked mask is stored separately and the configured sentinel is
 restored exactly. Non-finite input values are always classified as missing.
 
+Relative mode uses the same scan and entropy stages over log magnitudes. It
+stores zero and sign masks alongside the missing mask and verifies the
+pointwise condition `abs(decoded - original) <= error_bound * abs(original)`
+for every nonzero valid value. Absolute mode remains the default.
+
 The encoded header records the normalized shape, dtype, missing-value policy,
 requested and effective error bounds, quantization step, origin, valid and
 repaired counts, codec version, and payload/error metrics. `BraceCodec.get_config()`

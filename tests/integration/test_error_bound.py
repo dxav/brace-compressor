@@ -75,3 +75,44 @@ def test_decode_single_element_grid():
     codec = BraceCodec(shape=(1, 1, 1), error_bound=0.01)
     dec = codec.decode(codec.encode(field))
     assert abs(float(dec[0, 0, 0]) - 42.5) <= 0.01
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_relative_bound_preserves_zero_and_limits_pointwise_error(dtype):
+    field = np.array(
+        [[[0.0, 1e-4, 0.01, 1.0, 25.0, -4.0, np.nan]]], dtype=dtype
+    )
+    codec = BraceCodec(
+        shape=field.shape,
+        error_bound=0.01,
+        dtype=dtype,
+        error_bound_mode="relative",
+    )
+    decoded = codec.decode(codec.encode(field))
+    valid = np.isfinite(field)
+    nonzero = valid & (field != 0.0)
+    assert np.array_equal(decoded == 0.0, field == 0.0)
+    assert np.all(
+        np.abs(decoded[nonzero] - field[nonzero])
+        <= 0.01 * np.abs(field[nonzero])
+    )
+    assert np.isnan(decoded[~valid]).all()
+
+
+def test_relative_bound_preserves_finite_missing_sentinel():
+    sentinel = -999.0
+    field = np.array([[[0.0, 2.0, sentinel, -4.0]]], dtype=np.float64)
+    codec = BraceCodec(
+        shape=field.shape,
+        error_bound=0.02,
+        dtype="float64",
+        missing_value=sentinel,
+        error_bound_mode="relative",
+    )
+    decoded = codec.decode(codec.encode(field))
+    valid = field != sentinel
+    assert np.array_equal(decoded == sentinel, field == sentinel)
+    assert np.all(
+        np.abs(decoded[valid & (field != 0.0)] - field[valid & (field != 0.0)])
+        <= 0.02 * np.abs(field[valid & (field != 0.0)])
+    )

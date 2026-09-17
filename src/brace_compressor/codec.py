@@ -1,10 +1,9 @@
 """The public numcodecs.Codec implementing error-bounded BRACE compression.
 
 Pipeline: predict from already reconstructed neighbors with a
-deterministic cold-start value -> quantize residuals (step derived from the
-absolute error bound) -> entropy-code symbols (bit-exact, per-block mode
-selection) -> verify-and-repair (bounds the decoded error using an
-epsilon-clamped effective bound) -> frame container.
+deterministic cold-start value -> quantize residuals in absolute or logarithmic
+relative mode -> entropy-code symbols (bit-exact, per-block mode selection) ->
+verify-and-repair -> frame container.
 """
 
 from __future__ import annotations
@@ -49,6 +48,8 @@ CODEC_VERSION = "0.1.0"
 OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass
 
 _MODE_QUANTIZED = 0
+_MODE_RELATIVE = 1
+_LOG_OFFSET = 1024.0
 
 
 class BraceCodec(Codec):
@@ -70,6 +71,7 @@ class BraceCodec(Codec):
         missing_value="nan",
         dtype="float32",
         outer_compress: bool = OUTER_COMPRESS_DEFAULT,
+        error_bound_mode: str = "absolute",
     ):
         self.shape = validate_shape(shape)
         self.error_bound = validate_error_bound(error_bound)
@@ -81,6 +83,9 @@ class BraceCodec(Codec):
         if self.dtype not in {np.dtype("float32"), np.dtype("float64")}:
             raise ValueError(f"dtype must be 'float32' or 'float64'; got {dtype!r}")
         self.outer_compress = bool(outer_compress)
+        if error_bound_mode not in {"absolute", "relative"}:
+            raise ValueError("error_bound_mode must be 'absolute' or 'relative'")
+        self.error_bound_mode = error_bound_mode
         self.last_timings: dict[str, float] = {}
 
     # ------------------------------------------------------------------
@@ -98,6 +103,7 @@ class BraceCodec(Codec):
             "missing_value": missing,
             "dtype": self.dtype.name,
             "outer_compress": self.outer_compress,
+            "error_bound_mode": self.error_bound_mode,
         }
 
     @classmethod
@@ -153,20 +159,49 @@ class BraceCodec(Codec):
         mask_time = time.perf_counter() - stage_start
 
         bound = self.error_bound
+        relative = self.error_bound_mode == "relative"
         effective_bound = max(bound, float(np.finfo(self.dtype).eps))
-        step = derive_step(bound, dtype=self.dtype)
-        prior = np.full(self.shape, 32.0, dtype=self.dtype)
+        zero_mask = np.zeros(self.shape, dtype=bool)
+        negative_mask = np.zeros(self.shape, dtype=bool)
+        scan_field = field
+        scan_mask = mask
+        if relative:
+            zero_mask = (~mask) & (field == 0.0)
+            negative_mask = (~mask) & (field < 0.0)
+            scan_mask = mask | zero_mask
+            scan_field = np.zeros_like(field)
+            nonzero = ~scan_mask
+            scan_field[nonzero] = (
+                np.log(np.abs(field[nonzero])) + _LOG_OFFSET
+            ).astype(self.dtype)
+            step = 2.0 * math.log1p(effective_bound)
+            prior = np.full(self.shape, _LOG_OFFSET, dtype=self.dtype)
+        else:
+            step = derive_step(bound, dtype=self.dtype)
+            prior = np.full(self.shape, 32.0, dtype=self.dtype)
         stage_start = time.perf_counter()
         symbols, recon_rows, origin = self._causal_scan_encode(
-            field, mask, prior, step
+            scan_field, scan_mask, prior, step, use_rust=not relative
         )
         scan_time = time.perf_counter() - stage_start
         # --- Verify-and-repair: compare against the effective bound -------
         grid3d = recon_rows.reshape(self.shape)
-        decoded_valid = grid3d[~mask]
+        if relative:
+            decoded_grid = np.zeros(self.shape, dtype=self.dtype)
+            decoded_grid[~scan_mask] = np.exp(
+                grid3d[~scan_mask].astype(np.float64) - _LOG_OFFSET
+            ).astype(self.dtype)
+            decoded_grid[negative_mask] *= -1.0
+            decoded_valid = decoded_grid[~mask]
+            effective_bound_values = (
+                np.abs(valid_values.astype(np.float64)) * effective_bound
+            )
+        else:
+            decoded_valid = grid3d[~mask]
+            effective_bound_values = effective_bound
         stage_start = time.perf_counter()
-        repair_map, _, max_abs_error, _ = verify_and_repair(
-            valid_values, decoded_valid, effective_bound, dtype=self.dtype
+        repair_map, verified_errors, max_abs_error, _ = verify_and_repair(
+            valid_values, decoded_valid, effective_bound_values, dtype=self.dtype
         )
         verify_time = time.perf_counter() - stage_start
         repair_positions, repair_values = repair_map.positions, repair_map.values
@@ -179,28 +214,49 @@ class BraceCodec(Codec):
             + pack_repairs(repair_positions, repair_values, dtype=self.dtype)
         )
         entropy_time = time.perf_counter() - stage_start
-        mode = _MODE_QUANTIZED
+        mode = _MODE_RELATIVE if relative else _MODE_QUANTIZED
 
         # --- Mask + container -------------------------------------------
         mask_payload = pack_mask(mask)
+        mask_parts = {"missing": len(mask_payload)}
+        if relative:
+            zero_payload = pack_mask(zero_mask)
+            negative_payload = pack_mask(negative_mask)
+            mask_payload += zero_payload + negative_payload
+            mask_parts.update(zero=len(zero_payload), negative=len(negative_payload))
         header_extra = {
             "shape": list(self.shape),
             "dtype": self.dtype.name,
             "missing_value": "nan" if np.isnan(self.missing_value) else float(self.missing_value),
             "error_bound": float(bound),
+            "error_bound_mode": self.error_bound_mode,
             "quant_step": step,
             "origin": float(origin),
             "mode": mode,
-            "effective_error_bound": effective_bound,
+            "effective_error_bound": float(effective_bound),
             "n_valid": int(valid_values.size),
+            "n_symbols": int(symbols.size),
             "n_repaired": int(repair_positions.size),
+            "mask_parts": mask_parts,
             "metrics": {
                 # FR-012: payload-based metrics (stable, non-self-referential).
                 "max_abs_error": max_abs_error,
+                "max_relative_error": float(
+                    np.max(
+                        np.divide(
+                            verified_errors.astype(np.float64),
+                            np.abs(valid_values.astype(np.float64)),
+                            out=np.zeros_like(verified_errors, dtype=np.float64),
+                            where=valid_values != 0,
+                        )
+                    )
+                ) if relative and verified_errors.size else 0.0,
                 "n_repaired": int(repair_positions.size),
                 "uncompressed_size": int(field.nbytes),
                 "payload_size": int(len(mask_payload) + len(value_payload)),
-                "bound_respected": bool(max_abs_error <= effective_bound),
+                "bound_respected": bool(
+                    np.all(verified_errors <= effective_bound_values)
+                ),
             },
             "codec_version": CODEC_VERSION,
         }
@@ -261,13 +317,41 @@ class BraceCodec(Codec):
         step = float(h["quant_step"])
         origin = float(h["origin"])
         n_valid = int(h["n_valid"])
+        mode = int(h.get("mode", _MODE_QUANTIZED))
+        if mode not in {_MODE_QUANTIZED, _MODE_RELATIVE}:
+            raise ValueError(f"unsupported codec mode {mode}")
+        stream_mode = h.get(
+            "error_bound_mode",
+            "relative" if mode == _MODE_RELATIVE else "absolute",
+        )
+        if stream_mode != self.error_bound_mode:
+            raise ValueError(
+                f"container error_bound_mode {stream_mode!r} does not match codec "
+                f"mode {self.error_bound_mode!r}"
+            )
+        n_symbols = int(h.get("n_symbols", n_valid))
         missing_value = h["missing_value"]
         sentinel = float("nan") if missing_value == "nan" else float(missing_value)
 
         stage_start = time.perf_counter()
-        mask = unpack_mask(
-            c.mask_payload, int(np.prod(self.shape))
-        ).reshape(self.shape)
+        n_elements = int(np.prod(self.shape))
+        if mode == _MODE_RELATIVE:
+            mask_parts = h.get("mask_parts")
+            if not mask_parts:
+                raise ValueError("relative stream is missing mask metadata")
+            offset = 0
+            missing_size = int(mask_parts["missing"])
+            zero_size = int(mask_parts["zero"])
+            negative_size = int(mask_parts["negative"])
+            mask = unpack_mask(c.mask_payload[offset : offset + missing_size], n_elements).reshape(self.shape)
+            offset += missing_size
+            zero_mask = unpack_mask(c.mask_payload[offset : offset + zero_size], n_elements).reshape(self.shape)
+            offset += zero_size
+            negative_mask = unpack_mask(c.mask_payload[offset : offset + negative_size], n_elements).reshape(self.shape)
+            scan_mask = mask | zero_mask
+        else:
+            mask = unpack_mask(c.mask_payload, n_elements).reshape(self.shape)
+            scan_mask = mask
         mask_time = time.perf_counter() - stage_start
 
         payload = c.residual_payload
@@ -275,30 +359,43 @@ class BraceCodec(Codec):
             raise ValueError("residual payload too short")
         (ent_len,) = struct.unpack_from("<Q", payload, 0)
         stage_start = time.perf_counter()
-        symbols = decode_symbols(payload[8 : 8 + ent_len], n_valid)
+        symbols = decode_symbols(payload[8 : 8 + ent_len], n_symbols)
         repair_positions, repair_values, _ = unpack_repairs(
             payload, 8 + ent_len, dtype=self.dtype
         )
         entropy_time = time.perf_counter() - stage_start
         # --- Causal scan (identical walk to encode) ----------------------
-        prior = np.full(self.shape, 32.0, dtype=self.dtype)
+        relative = mode == _MODE_RELATIVE
+        prior = np.full(
+            self.shape, _LOG_OFFSET if relative else 32.0, dtype=self.dtype
+        )
         stage_start = time.perf_counter()
         recon_rows = self._causal_scan_decode(
             prior,
-            mask,
+            scan_mask,
             symbols,
             step,
             origin,
-            use_rust=self.dtype in {np.dtype("float32"), np.dtype("float64")},
+            use_rust=not relative and self.dtype in {np.dtype("float32"), np.dtype("float64")},
         )
         scan_time = time.perf_counter() - stage_start
-        decoded_valid = recon_rows.reshape(self.shape)[~mask]
+        if relative:
+            field = np.zeros(self.shape, dtype=self.dtype)
+            field[~scan_mask] = np.exp(
+                recon_rows.reshape(self.shape)[~scan_mask].astype(np.float64)
+                - _LOG_OFFSET
+            ).astype(self.dtype)
+            field[negative_mask] *= -1.0
+            decoded_valid = field[~mask]
+        else:
+            decoded_valid = recon_rows.reshape(self.shape)[~mask]
         if repair_positions.size:
             decoded_valid[repair_positions] = repair_values
 
-        field = np.empty(self.shape, dtype=self.dtype)
-        if n_valid:
-            field[~mask] = decoded_valid
+        if not relative:
+            field = np.empty(self.shape, dtype=self.dtype)
+            if n_valid:
+                field[~mask] = decoded_valid
         stage_start = time.perf_counter()
         field = apply_mask(
             decoded=field, mask=mask, missing_value=sentinel, dtype=self.dtype
@@ -321,7 +418,7 @@ class BraceCodec(Codec):
     # ------------------------------------------------------------------
     # Causal scan: identical encode/decode walk
     # ------------------------------------------------------------------
-    def _causal_scan_encode(self, field, mask, prior, step):
+    def _causal_scan_encode(self, field, mask, prior, step, use_rust=True):
         """Fused encode-side scan (single pass).
 
         Predicts each valid cell from already-reconstructed
@@ -332,7 +429,7 @@ class BraceCodec(Codec):
         when available (bit-exact), else the pure-Python loops.
         Returns (symbols, recon_rows, origin).
         """
-        if _HAS_RUST and self.dtype == np.dtype("float32"):
+        if use_rust and _HAS_RUST and self.dtype == np.dtype("float32"):
             symbols, recon_rows = _rs_scan_encode(
                 np.ascontiguousarray(field, dtype=np.float32),
                 np.ascontiguousarray(mask),
@@ -340,7 +437,7 @@ class BraceCodec(Codec):
                 float(step),
             )
             return symbols, recon_rows, 0.0
-        if _HAS_RUST_F64 and self.dtype == np.dtype("float64"):
+        if use_rust and _HAS_RUST_F64 and self.dtype == np.dtype("float64"):
             symbols, recon_rows = _rs_scan_encode_f64(
                 np.ascontiguousarray(field, dtype=np.float64),
                 np.ascontiguousarray(mask),

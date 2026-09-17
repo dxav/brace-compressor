@@ -17,12 +17,14 @@ def test_get_config_keys():
         "missing_value",
         "dtype",
         "outer_compress",
+        "error_bound_mode",
     }
     assert cfg["id"] == "brace"
     assert cfg["shape"] == list(DEFAULT_SHAPE)
     assert cfg["error_bound"] == DEFAULT_BOUND
     assert cfg["missing_value"] == "nan"
     assert cfg["dtype"] == "float32"
+    assert cfg["error_bound_mode"] == "absolute"
 
 
 def test_config_json_serializable():
@@ -41,6 +43,19 @@ def test_from_config_full_cycle():
     assert rebuilt.shape == original.shape
     assert rebuilt.error_bound == original.error_bound
     assert rebuilt.missing_value == original.missing_value
+
+
+def test_relative_mode_config_roundtrip():
+    original = BraceCodec(
+        shape=(1, 2, 3), error_bound=0.01, error_bound_mode="relative"
+    )
+    rebuilt = BraceCodec.from_config(original.get_config())
+    assert rebuilt.error_bound_mode == "relative"
+
+
+def test_invalid_error_bound_mode():
+    with pytest.raises(ValueError, match="error_bound_mode"):
+        BraceCodec(shape=DEFAULT_SHAPE, error_bound=DEFAULT_BOUND, error_bound_mode="bad")
 
 
 def test_from_config_missing_keys():

@@ -24,6 +24,10 @@ Two-dimensional inputs are represented internally as one time slice.
   configured dtype's machine epsilon as the minimum effective error budget.
   It is therefore near-lossless but can differ by floating-point computation
   error.
+- `error_bound_mode="relative"` applies the bound pointwise to each nonzero
+  value: `abs(decoded - original) <= error_bound * abs(original)`. Exact zeros
+  and missing values are preserved separately. The default mode is
+  `"absolute"`.
 - Supported value dtypes are explicitly selected with `dtype="float32"` or
   `dtype="float64"`; the dtype is recorded in container metadata.
 
@@ -36,6 +40,10 @@ Two-dimensional inputs are represented internally as one time slice.
   `2 * max(error_bound, eps(dtype))`, providing a compact integer residual
   stream while preserving the configured absolute-error target through
   verification.
+- **Pointwise relative bounds:** relative mode encodes nonzero magnitudes in
+  log space with a step of `2 * log1p(error_bound)`, while separate lossless
+  masks preserve zero values and signs. This turns the logarithmic error into
+  the requested multiplicative bound.
 - **Lossless missing-value handling:** missing and non-finite cells are stored
   in an independent RLE or bit-packed mask and restored exactly after decode.
 - **Adaptive entropy mode selection:** valid residuals are processed in blocks
@@ -106,6 +114,16 @@ assert np.array_equal(np.isnan(decoded), np.isnan(field))
 
 config = codec.get_config()
 codec_copy = BraceCodec.from_config(config)
+```
+
+For a pointwise relative bound, select the relative mode explicitly:
+
+```python
+codec = BraceCodec(
+  shape=shape,
+  error_bound=0.01,
+  error_bound_mode="relative",
+)
 ```
 
 To disable the final lossless Zstandard pass explicitly:
