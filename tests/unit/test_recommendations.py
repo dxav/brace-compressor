@@ -13,6 +13,22 @@ from brace_compressor import BraceCodec
 from brace_compressor.container import read_container
 
 
+def make_recommendations(requirements):
+    return Recommendations.from_config(
+        recommendations=[
+            {
+                "filters": [
+                    {"kind": "cf-short-name", "value": "x"},
+                    {"kind": "level-kind", "value": "pressure"},
+                ],
+                "requirements": requirements,
+            }
+        ],
+        version="0.1.0",
+        metadata={},
+    )
+
+
 def test_relative_recommendation_is_extracted_from_typed_model():
     recommendation = recommend_error_bound("cc")
 
@@ -218,6 +234,121 @@ def test_lossless_recommendation_preserves_configured_dtype_bits():
     decoded = codec.decode(codec.encode(original))
 
     assert decoded.tobytes() == original.tobytes()
+
+
+def test_mean_relative_recommendation_is_verified_after_encoding():
+    original = np.array([[[1.0, 2.0, 4.0]]], dtype=np.float64)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=make_recommendations(
+            [{"kind": "mean-relative-error-bound", "value": 0.1}]
+        ),
+    )
+
+    encoded = codec.encode(original)
+    decoded = codec.decode(encoded)
+    header = read_container(encoded).header_extra
+
+    assert decoded.shape == original.shape
+    assert header["recommendation_checks"][0]["passed"]
+
+
+def test_mean_range_relative_recommendation_is_verified_after_encoding():
+    original = np.array([[[0.0, 5.0, 10.0]]], dtype=np.float64)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=make_recommendations(
+            [{"kind": "mean-range-relative-error-bound", "value": 0.05}]
+        ),
+    )
+
+    encoded = codec.encode(original)
+    codec.decode(encoded)
+    header = read_container(encoded).header_extra
+
+    assert header["error_bound"] == pytest.approx(0.5)
+    assert header["recommendation_checks"][0]["passed"]
+
+
+def test_quadratic_recommendation_is_verified_after_encoding():
+    original = np.array([[[0.0, 5.0, 10.0]]], dtype=np.float64)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=make_recommendations(
+            [
+                {
+                    "kind": "max-pointwise-quadratic-error-bound",
+                    "value": 0.5,
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                }
+            ]
+        ),
+    )
+
+    encoded = codec.encode(original)
+    codec.decode(encoded)
+
+    assert read_container(encoded).header_extra["recommendation_checks"][0]["passed"]
+
+
+def test_all_recommendation_constraints_are_verified_together():
+    original = np.array([[[-1.0, 0.5, 2.0]]], dtype=np.float64)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=make_recommendations(
+            [
+                {
+                    "kind": "all",
+                    "requirements": [
+                        {"kind": "max-pointwise-absolute-error-bound", "value": 0.1},
+                        {"kind": "data-limits", "minimum": 0.0, "maximum": 1.0},
+                    ],
+                }
+            ]
+        ),
+    )
+
+    encoded = codec.encode(original)
+    codec.decode(encoded)
+    check = read_container(encoded).header_extra["recommendation_checks"][0]
+
+    assert check["kind"] == "all"
+    assert check["passed"]
+    assert all(child["passed"] for child in check["children"])
+
+
+def test_any_recommendation_selects_one_supported_branch():
+    plan = plan_recommendation(
+        "x",
+        recommendations=make_recommendations(
+            [
+                {
+                    "kind": "any",
+                    "requirements": [
+                        {"kind": "mean-relative-error-bound", "value": 0.1},
+                        {
+                            "kind": "max-pointwise-quadratic-error-bound",
+                            "value": 0.5,
+                            "minimum": 0.0,
+                            "maximum": 10.0,
+                        },
+                    ],
+                }
+            ]
+        ),
+    )
+
+    assert len(plan.selected) == 1
+    assert plan.selected[0].kind == "mean-relative-error-bound"
 
 
 def test_plan_preserves_all_requirements_and_selects_relative_any_branch():
