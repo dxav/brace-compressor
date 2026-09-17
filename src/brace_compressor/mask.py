@@ -32,7 +32,7 @@ def _pack_rle(flat: np.ndarray) -> bytes:
     return bytes(out)
 
 
-def extract_mask(values: np.ndarray, missing_value) -> np.ndarray:
+def extract_mask(values: np.ndarray, missing_value, dtype=None) -> np.ndarray:
     """Return a bool array where True marks missing elements.
 
     ``missing_value`` may be a finite float or the string ``"nan"``.
@@ -40,14 +40,14 @@ def extract_mask(values: np.ndarray, missing_value) -> np.ndarray:
     NaN elements are missing. Any non-finite element that does not match a
     finite sentinel is also treated as missing (FR-011).
     """
-    values = np.asarray(values, dtype=np.float32)
+    values = np.asarray(values, dtype=dtype)
     if isinstance(missing_value, str) and missing_value.lower() == "nan":
         # NaN sentinel: NaN and any other non-finite value count as missing
         return ~np.isfinite(values)
     missing_value = float(missing_value)
     if np.isnan(missing_value):
         return ~np.isfinite(values)
-    mask = values == np.float32(missing_value)
+    mask = values == np.asarray(missing_value, dtype=values.dtype)
     # FR-011: non-finite values not matching the sentinel -> missing
     mask |= ~np.isfinite(values)
     return mask
@@ -111,11 +111,13 @@ def unpack_mask(packed: bytes, n: int) -> np.ndarray:
     return bits.astype(bool)
 
 
-def apply_mask(decoded: np.ndarray, mask: np.ndarray, missing_value: float) -> np.ndarray:
+def apply_mask(
+    decoded: np.ndarray, mask: np.ndarray, missing_value: float, dtype=None
+) -> np.ndarray:
     """Return decoded values with the sentinel restored at missing positions."""
-    out = np.asarray(decoded, dtype=np.float32).copy()
-    out[mask] = np.float32(missing_value)
-    return out.astype(np.float32)
+    out = np.asarray(decoded, dtype=dtype).copy()
+    out[mask] = np.asarray(missing_value, dtype=out.dtype)
+    return out
 
 
 def mask_is_identical(original: np.ndarray, reconstructed: np.ndarray) -> bool:

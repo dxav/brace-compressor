@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 
 
-def derive_step(error_bound: float) -> float:
+def derive_step(error_bound: float, dtype=np.float32) -> float:
     """Derive quantization step Δ from the absolute error bound.
 
     ``Δ = 2·max(bound, eps32)``. Bounds below float32 machine epsilon use
@@ -28,7 +28,7 @@ def derive_step(error_bound: float) -> float:
 
     if math.isnan(error_bound) or math.isinf(error_bound) or error_bound < 0:
         raise ValueError(f"invalid error_bound: {error_bound!r}")
-    effective_bound = max(float(error_bound), float(np.finfo(np.float32).eps))
+    effective_bound = max(float(error_bound), float(np.finfo(dtype).eps))
     return 2.0 * effective_bound
 
 

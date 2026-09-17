@@ -696,21 +696,27 @@ def decode_symbols(payload: bytes, n: int) -> np.ndarray:
     return symbols
 
 
-def pack_repairs(positions: np.ndarray, values: np.ndarray) -> bytes:
-    """Append repair section: u32 count, then (i64 pos, f32 value) pairs."""
+def pack_repairs(positions: np.ndarray, values: np.ndarray, dtype=np.float32) -> bytes:
+    """Append repair section: u32 count, then positions and typed values."""
     positions = np.asarray(positions, dtype=np.int64)
-    values = np.asarray(values, dtype=np.float32)
+    value_dtype = np.dtype(dtype)
+    if value_dtype not in {np.dtype("float32"), np.dtype("float64")}:
+        raise ValueError(f"repair dtype must be float32 or float64, got {dtype!r}")
+    values = np.asarray(values, dtype=value_dtype)
     if positions.size != values.size:
         raise ValueError("repair positions/values size mismatch")
     return (
         _REPAIR.pack(int(positions.size))
         + positions.astype("<i8").tobytes()
-        + values.astype("<f4").tobytes()
+        + values.astype(value_dtype.newbyteorder("<")).tobytes()
     )
 
 
-def unpack_repairs(payload: bytes, offset: int = 0):
+def unpack_repairs(payload: bytes, offset: int = 0, dtype=np.float32):
     """Split repair section starting at ``offset``; returns (positions, values, end)."""
+    value_dtype = np.dtype(dtype)
+    if value_dtype not in {np.dtype("float32"), np.dtype("float64")}:
+        raise ValueError(f"repair dtype must be float32 or float64, got {dtype!r}")
     (count,) = _REPAIR.unpack_from(payload, offset)
     off = offset + _REPAIR.size
     positions = (
@@ -719,10 +725,14 @@ def unpack_repairs(payload: bytes, offset: int = 0):
         else np.zeros(0, dtype=np.int64)
     )
     off += count * 8
+    value_size = value_dtype.itemsize
     values = (
-        np.frombuffer(payload[off : off + count * 4], dtype="<f4").copy()
+        np.frombuffer(
+            payload[off : off + count * value_size],
+            dtype=value_dtype.newbyteorder("<"),
+        ).copy()
         if count
-        else np.zeros(0, dtype=np.float32)
+        else np.zeros(0, dtype=value_dtype)
     )
-    off += count * 4
+    off += count * value_size
     return positions, values, off

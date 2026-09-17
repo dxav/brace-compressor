@@ -65,9 +65,12 @@ class BraceCodec(Codec):
         self.shape = validate_shape(shape)
         self.error_bound = validate_error_bound(error_bound)
         self.missing_value = normalize_missing_value(missing_value)
-        if dtype != "float32":
-            raise ValueError(f"dtype must be 'float32' in v2; got {dtype!r}")
-        self.dtype = np.dtype("float32")
+        try:
+            self.dtype = np.dtype(dtype)
+        except TypeError as exc:
+            raise ValueError(f"dtype must be 'float32' or 'float64'; got {dtype!r}") from exc
+        if self.dtype not in {np.dtype("float32"), np.dtype("float64")}:
+            raise ValueError(f"dtype must be 'float32' or 'float64'; got {dtype!r}")
         self.outer_compress = bool(outer_compress)
 
     # ------------------------------------------------------------------
@@ -83,7 +86,7 @@ class BraceCodec(Codec):
             "shape": list(self.shape),
             "error_bound": float(self.error_bound),
             "missing_value": missing,
-            "dtype": "float32",
+            "dtype": self.dtype.name,
             "outer_compress": self.outer_compress,
         }
 
@@ -113,36 +116,33 @@ class BraceCodec(Codec):
                 f"encode buffer has {arr.size} elements; expected {expected} "
                 f"(shape {self.shape})"
             )
-        if arr.dtype != np.float32:
-            # Float64 buffers of the same element count are accepted and
-            # downcast; non-float dtypes are reinterpreted byte-wise only
-            # when the byte size matches.
+        if arr.dtype != self.dtype:
             if arr.dtype.kind == "f":
-                arr = arr.astype(np.float32)
-            elif arr.nbytes == expected * 4:
-                arr = arr.view(np.float32)
+                arr = arr.astype(self.dtype)
+            elif arr.nbytes == expected * self.dtype.itemsize:
+                arr = arr.view(self.dtype)
             else:
                 raise ValueError(
-                    f"cannot interpret buffer of dtype {arr.dtype} as float32 field"
+                    f"cannot interpret buffer of dtype {arr.dtype} as {self.dtype.name} field"
                 )
         field = arr.reshape(self.shape)
         if not field.flags["C_CONTIGUOUS"]:
             field = np.ascontiguousarray(field)
-        return np.ascontiguousarray(field, dtype=np.float32)
+        return np.ascontiguousarray(field, dtype=self.dtype)
 
     # ------------------------------------------------------------------
     # Encode / decode
     # ------------------------------------------------------------------
     def encode(self, buf) -> bytes:
         field = self._as_field(buf)
-        mask = extract_mask(field, self.missing_value)
-        valid_values = field[~mask].astype(np.float32)
+        mask = extract_mask(field, self.missing_value, dtype=self.dtype)
+        valid_values = field[~mask].astype(self.dtype)
         n_valid = int(valid_values.size)
 
         bound = self.error_bound
-        effective_bound = max(bound, float(np.finfo(np.float32).eps))
-        step = derive_step(bound)
-        prior = np.full(self.shape, 32.0, dtype=np.float32)
+        effective_bound = max(bound, float(np.finfo(self.dtype).eps))
+        step = derive_step(bound, dtype=self.dtype)
+        prior = np.full(self.shape, 32.0, dtype=self.dtype)
         symbols, recon_rows, origin = self._causal_scan_encode(
             field, mask, prior, step
         )
@@ -150,7 +150,7 @@ class BraceCodec(Codec):
         grid3d = recon_rows.reshape(self.shape)
         decoded_valid = grid3d[~mask]
         repair_map, _, max_abs_error, _ = verify_and_repair(
-            valid_values, decoded_valid, effective_bound
+            valid_values, decoded_valid, effective_bound, dtype=self.dtype
         )
         repair_positions, repair_values = repair_map.positions, repair_map.values
         # --- Entropy coding (bit-exact; per-block mode selection) ----------
@@ -158,7 +158,7 @@ class BraceCodec(Codec):
         value_payload = (
             struct.pack("<Q", len(encoded_syms))
             + encoded_syms
-            + pack_repairs(repair_positions, repair_values)
+            + pack_repairs(repair_positions, repair_values, dtype=self.dtype)
         )
         mode = _MODE_QUANTIZED
 
@@ -166,7 +166,7 @@ class BraceCodec(Codec):
         mask_payload = pack_mask(mask)
         header_extra = {
             "shape": list(self.shape),
-            "dtype": "float32",
+            "dtype": self.dtype.name,
             "missing_value": "nan" if np.isnan(self.missing_value) else float(self.missing_value),
             "error_bound": float(bound),
             "quant_step": step,
@@ -196,14 +196,14 @@ class BraceCodec(Codec):
     def decode(self, buf, out=None):
         if out is not None:
             out = np.asarray(out)
-            expected = int(np.prod(self.shape)) * 4
+            expected = int(np.prod(self.shape)) * self.dtype.itemsize
             if out.nbytes != expected:
                 raise ValueError(
                     f"out buffer must be exactly {expected} bytes "
-                    f"(shape {self.shape}, float32); got {out.nbytes}"
+                    f"(shape {self.shape}, {self.dtype.name}); got {out.nbytes}"
                 )
-            if not out.flags["C_CONTIGUOUS"] or out.dtype != np.float32:
-                raise ValueError("out buffer must be C-contiguous float32")
+            if not out.flags["C_CONTIGUOUS"] or out.dtype != self.dtype:
+                raise ValueError(f"out buffer must be C-contiguous {self.dtype.name}")
 
         try:
             c = read_container(buf)
@@ -215,6 +215,12 @@ class BraceCodec(Codec):
                 f"this codec supports {MODEL_VERSION}"
             )
         h = c.header_extra
+        stream_dtype = np.dtype(h.get("dtype", "float32"))
+        if stream_dtype != self.dtype:
+            raise ValueError(
+                f"container dtype {stream_dtype.name} does not match codec dtype "
+                f"{self.dtype.name}"
+            )
         shape = tuple(h["shape"])
         if shape != self.shape:
             raise ValueError(
@@ -235,18 +241,29 @@ class BraceCodec(Codec):
             raise ValueError("residual payload too short")
         (ent_len,) = struct.unpack_from("<Q", payload, 0)
         symbols = decode_symbols(payload[8 : 8 + ent_len], n_valid)
-        repair_positions, repair_values, _ = unpack_repairs(payload, 8 + ent_len)
+        repair_positions, repair_values, _ = unpack_repairs(
+            payload, 8 + ent_len, dtype=self.dtype
+        )
         # --- Causal scan (identical walk to encode) ----------------------
-        prior = np.full(self.shape, 32.0, dtype=np.float32)
-        recon_rows = self._causal_scan_decode(prior, mask, symbols, step, origin)
+        prior = np.full(self.shape, 32.0, dtype=self.dtype)
+        recon_rows = self._causal_scan_decode(
+            prior,
+            mask,
+            symbols,
+            step,
+            origin,
+            use_rust=self.dtype == np.dtype("float32"),
+        )
         decoded_valid = recon_rows.reshape(self.shape)[~mask]
         if repair_positions.size:
             decoded_valid[repair_positions] = repair_values
 
-        field = np.empty(self.shape, dtype=np.float32)
+        field = np.empty(self.shape, dtype=self.dtype)
         if n_valid:
             field[~mask] = decoded_valid
-        field = apply_mask(decoded=field, mask=mask, missing_value=sentinel)
+        field = apply_mask(
+            decoded=field, mask=mask, missing_value=sentinel, dtype=self.dtype
+        )
 
         if out is not None:
             out[...] = field.reshape(out.shape)
@@ -267,7 +284,7 @@ class BraceCodec(Codec):
         when available (bit-exact), else the pure-Python loops.
         Returns (symbols, recon_rows, origin).
         """
-        if _HAS_RUST:
+        if _HAS_RUST and self.dtype == np.dtype("float32"):
             symbols, recon_rows = _rs_scan_encode(
                 np.ascontiguousarray(field, dtype=np.float32),
                 np.ascontiguousarray(mask),
@@ -329,9 +346,11 @@ class BraceCodec(Codec):
                     k += 1
         return symbols, recon_rows, 0.0
 
-    def _causal_scan_decode(self, prior, mask, symbols, step, origin):
+    def _causal_scan_decode(
+        self, prior, mask, symbols, step, origin, use_rust=True
+    ):
         """Decoder mirror of :meth:`_causal_scan_encode` (same order/math)."""
-        if _HAS_RUST:
+        if _HAS_RUST and use_rust and self.dtype == np.dtype("float32"):
             return _rs_scan_decode(
                 np.ascontiguousarray(prior, dtype=np.float32),
                 np.ascontiguousarray(mask),

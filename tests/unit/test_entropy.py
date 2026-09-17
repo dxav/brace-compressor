@@ -133,6 +133,19 @@ def test_repairs_roundtrip():
     assert end == len(total)
 
 
+def test_float64_repairs_roundtrip():
+    pos = np.array([3, 17], dtype=np.int64)
+    val = np.array([1.234567890123, -9876543.210987], dtype=np.float64)
+    payload = pack_repairs(pos, val, dtype=np.float64)
+
+    p2, v2, end = unpack_repairs(payload, dtype=np.float64)
+
+    np.testing.assert_array_equal(p2, pos)
+    np.testing.assert_array_equal(v2, val)
+    assert v2.dtype == np.float64
+    assert end == len(payload)
+
+
 def test_repair_section_offset():
     syms = np.arange(5000, dtype=np.int64) - 2500
     pos = np.array([7], dtype=np.int64)

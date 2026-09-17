@@ -86,6 +86,38 @@ def test_decode_out_wrong_size_raises(codec_factory):
         codec2.decode(enc, out=bad)
 
 
+def test_float64_codec_preserves_dtype_and_precision():
+    field = np.array(
+        [[[1.234567890123, 1.0e-10], [np.nan, -9876543.210987]]],
+        dtype=np.float64,
+    )
+    codec = BraceCodec(shape=field.shape, error_bound=1.0e-10, dtype="float64")
+
+    assert codec.get_config()["dtype"] == "float64"
+    assert BraceCodec.from_config(codec.get_config()).dtype == np.dtype("float64")
+    decoded = codec.decode(codec.encode(field))
+
+    assert decoded.dtype == np.float64
+    np.testing.assert_allclose(
+        decoded[~np.isnan(field)],
+        field[~np.isnan(field)],
+        atol=1.0e-10,
+        rtol=0.0,
+    )
+    assert np.isnan(decoded[0, 1, 0])
+
+
+def test_float64_decode_uses_float64_out_buffer():
+    field = np.ones((1, 2, 2), dtype=np.float64)
+    codec = BraceCodec(shape=field.shape, error_bound=0.01, dtype="float64")
+    encoded = codec.encode(field)
+    out = np.empty(field.shape, dtype=np.float64)
+
+    assert codec.decode(encoded, out=out) is out
+    with pytest.raises(ValueError, match="out buffer"):
+        codec.decode(encoded, out=np.empty(field.shape, dtype=np.float32))
+
+
 def test_decode_rejects_unknown_scan_version(codec_factory, smooth_field):
     from brace_compressor.container import read_container, write_container
 
@@ -121,4 +153,4 @@ def test_constructor_validation():
     with pytest.raises(ValueError, match="shape"):
         BraceCodec(shape=(0, 4, 4), error_bound=0.1)
     with pytest.raises(ValueError, match="dtype"):
-        BraceCodec(shape=(1, 4, 4), error_bound=0.1, dtype="float64")
+        BraceCodec(shape=(1, 4, 4), error_bound=0.1, dtype="int32")

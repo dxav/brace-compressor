@@ -28,10 +28,13 @@ class RepairMap:
         return int(self.positions.size)
 
 
-def measure_errors(orig_valid: np.ndarray, decoded_valid: np.ndarray) -> np.ndarray:
+def measure_errors(
+    orig_valid: np.ndarray, decoded_valid: np.ndarray, dtype=np.float32
+) -> np.ndarray:
     """Per-element absolute error between original and reconstructed values."""
-    orig_valid = np.asarray(orig_valid, dtype=np.float32)
-    decoded_valid = np.asarray(decoded_valid, dtype=np.float32)
+    value_dtype = np.dtype(dtype)
+    orig_valid = np.asarray(orig_valid, dtype=value_dtype)
+    decoded_valid = np.asarray(decoded_valid, dtype=value_dtype)
     if orig_valid.shape != decoded_valid.shape:
         raise ValueError(
             f"shape mismatch between original ({orig_valid.shape}) and "
@@ -39,16 +42,22 @@ def measure_errors(orig_valid: np.ndarray, decoded_valid: np.ndarray) -> np.ndar
         )
     return np.abs(
         orig_valid.astype(np.float64) - decoded_valid.astype(np.float64)
-    ).astype(np.float32)
+    )
 
 
-def violations(orig_valid, decoded_valid, error_bound: float) -> np.ndarray:
+def violations(
+    orig_valid, decoded_valid, error_bound: float, dtype=np.float32
+) -> np.ndarray:
     """Indices (into the valid-value list) of elements exceeding the bound."""
-    errors = measure_errors(orig_valid, decoded_valid)
-    return np.nonzero(errors > np.float32(error_bound))[0].astype(np.int64)
+    errors = measure_errors(orig_valid, decoded_valid, dtype=dtype)
+    return np.nonzero(errors > np.asarray(error_bound, dtype=dtype))[0].astype(
+        np.int64
+    )
 
 
-def verify_and_repair(orig_valid, decoded_valid, error_bound, repair_fn=None):
+def verify_and_repair(
+    orig_valid, decoded_valid, error_bound, repair_fn=None, dtype=np.float32
+):
     """Verify decoded values against the bound; repair violations by escalation.
 
     Args:
@@ -65,23 +74,27 @@ def verify_and_repair(orig_valid, decoded_valid, error_bound, repair_fn=None):
         them; residual_errors is the post-repair per-element error array;
         ``max_abs_error`` is the final verified maximum (<= bound).
     """
-    errors = measure_errors(orig_valid, decoded_valid)
-    bad = np.nonzero(errors > np.float32(error_bound))[0].astype(np.int64)
+    value_dtype = np.dtype(dtype)
+    errors = measure_errors(orig_valid, decoded_valid, dtype=value_dtype)
+    bad = np.nonzero(errors > np.asarray(error_bound, dtype=value_dtype))[0].astype(
+        np.int64
+    )
 
     if bad.size == 0:
         max_abs = float(errors.max()) if errors.size else 0.0
         return RepairMap(), errors, max_abs, 0
 
-    # Escalation: exact float32 correction for violating elements.
-    reconstruction = np.asarray(decoded_valid, dtype=np.float32).copy()
-    reconstruction[bad] = np.asarray(orig_valid, dtype=np.float32)[bad]
-    repair_map = RepairMap(positions=bad, values=orig_valid[bad].astype(np.float32))
+    # Escalation: exact correction in the configured field dtype.
+    reconstruction = np.asarray(decoded_valid, dtype=value_dtype).copy()
+    reconstruction[bad] = np.asarray(orig_valid, dtype=value_dtype)[bad]
+    repair_map = RepairMap(positions=bad, values=orig_valid[bad].astype(value_dtype))
 
-    post = measure_errors(np.asarray(orig_valid, dtype=np.float32), reconstruction)
-    remaining = np.nonzero(post > np.float32(error_bound))[0]
+    post = measure_errors(
+        np.asarray(orig_valid, dtype=value_dtype), reconstruction, dtype=value_dtype
+    )
+    remaining = np.nonzero(post > np.asarray(error_bound, dtype=value_dtype))[0]
     if remaining.size:
-        # Exact corrections cannot exceed the bound in float32 rounding;
-        # a remaining violation means a float32-representation limit.
+        # Exact corrections can still be limited by representation precision.
         max_abs = float(post.max())
     else:
         max_abs = float(post.max()) if post.size else 0.0
