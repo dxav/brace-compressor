@@ -68,6 +68,11 @@ Synthetic field:
   --shape 8 90 180 --bound 0.05
 ```
 
+The benchmark enables the lossless outer Zstandard pass by default. Use
+`--no-outer-compress` to measure the entropy-coded container without that final
+pass. The equivalent Python setting is `BraceCodec(...,
+outer_compress=False)`.
+
 Real NetCDF field:
 
 The repository does not include the reference dataset. Download and prepare

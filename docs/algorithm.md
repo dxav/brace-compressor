@@ -119,8 +119,11 @@ The `HWPC` container stores:
 4. residual payload length and payload;
 5. CRC-32 over all preceding bytes.
 
-The optional outer pass is Zstandard and lossless. Mask and residual payloads are
+The optional outer pass is Zstandard and lossless. It is enabled by default by
+`BraceCodec`; pass `outer_compress=False` to skip it. The CLI benchmark exposes
+the same setting as `--no-outer-compress`. Mask and residual payloads are
 considered independently, so incompressible entropy output is not expanded.
+Disabling this pass does not disable residual entropy coding or mask packing.
 Flag `0x0001` preserves the original meaning that both payloads are compressed;
 flags `0x0002` and `0x0004` represent mask-only and residual-only compression.
 

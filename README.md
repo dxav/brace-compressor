@@ -52,7 +52,11 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   model metadata, payload lengths, compression flags, and a CRC-32 checksum.
 - **Optional Zstandard pass:** mask and residual payloads can be compressed
   independently with Zstandard when that reduces their size; this pass is
-  lossless and does not replace the residual entropy modes.
+  lossless and does not replace the residual entropy modes. It is enabled by
+  default and can be disabled with `BraceCodec(..., outer_compress=False)` or
+  the benchmark CLI's `--no-outer-compress` option. Disabling it skips only
+  this final Zstandard pass; entropy coding and lossless mask coding remain
+  enabled.
 - **Optional Rust acceleration:** the causal scan has bit-exact Rust
   implementations for both float32 and float64, with a Python fallback, while
   entropy coding remains fully deterministic. There is no codec configuration
@@ -95,6 +99,16 @@ config = codec.get_config()
 codec_copy = BraceCodec.from_config(config)
 ```
 
+To disable the final lossless Zstandard pass explicitly:
+
+```python
+codec = BraceCodec(
+  shape=shape,
+  error_bound=0.05,
+  outer_compress=False,
+)
+```
+
 `BraceCodec` inherits from `numcodecs.abc.Codec` and implements `codec_id`,
 `encode`, `decode`, `get_config`, and `from_config`. Importing
 `brace_compressor` registers the `brace` codec with the registry.
@@ -131,6 +145,14 @@ Run the benchmark on the `wvpa` variable with:
 
 .venv/bin/python scripts/compress_stats.py \
   --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa --sweep 0.01 0.05 0.2
+```
+
+Add `--no-outer-compress` to benchmark without the final Zstandard pass:
+
+```bash
+.venv/bin/python scripts/compress_stats.py \
+  --input data/HOAPS_2020-08_6-hourly.nc \
+  --variable wvpa --bound 0.05 --no-outer-compress
 ```
 
 The benchmark performs encode and decode, independently checks the bound and
