@@ -27,8 +27,12 @@ constant value of `32.0`, which is available identically to encode and decode.
 
 The encoder simulates the decoder state while quantizing. Decode repeats the
 same walk and therefore obtains the same prediction for every symbol. Rust
-and Python implementations of the scan are kept bit-exact, with Python as
-the fallback when the optional extension is unavailable.
+and Python implementations of the scan are kept bit-exact. The codec does
+not expose a runtime switch for acceleration: if the compiled `brace_scan`
+extension is importable, encode and decode automatically select the Rust
+function matching the configured dtype (`float32` or `float64`). Python is the
+fallback when the extension, or the required dtype-specific symbol, is
+unavailable.
 
 ## Guarantees
 
@@ -46,4 +50,5 @@ configured sentinel is restored exactly.
 - `model/entropy.py`: lossless symbol coding.
 - `verify.py`: post-encode bound verification and repair.
 - `container.py`: versioned framing, optional outer compression, and CRC.
-- `rust/brace_scan`: optional accelerated scan.
+- `rust/brace_scan`: optional accelerated scan, selected automatically when
+  its compiled extension is importable.

@@ -30,9 +30,13 @@ cargo build --manifest-path rust/brace_scan/Cargo.toml --release
 python -m pip install -e .
 ```
 
-The extension exports `causal_scan_encode` and `causal_scan_decode`. Tests
-compare behavior through the public codec; the Python fallback remains the
-reference implementation.
+The extension exports `causal_scan_encode` and `causal_scan_decode` for
+float32, plus `causal_scan_encode_f64` and `causal_scan_decode_f64` for
+float64. The public codec selects these functions automatically based on its
+configured dtype; there is no separate runtime activation setting. If the
+extension is absent, or an older build lacks the float64 symbols, the codec
+falls back to Python. Tests compare behavior through the public codec, with
+the Python implementation remaining the reference implementation.
 
 ## Tests
 

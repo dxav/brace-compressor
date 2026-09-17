@@ -55,7 +55,11 @@ predictor, bound-derived residual quantization, and lossless entropy coding.
   lossless and does not replace the residual entropy modes.
 - **Optional Rust acceleration:** the causal scan has bit-exact Rust
   implementations for both float32 and float64, with a Python fallback, while
-  entropy coding remains fully deterministic.
+  entropy coding remains fully deterministic. There is no codec configuration
+  flag: when the compiled `brace_scan` extension is importable, the codec
+  automatically uses the matching Rust scan for the configured dtype. If the
+  extension is not installed or a matching symbol is unavailable, it uses the
+  Python scan instead.
 
 ## Install
 
@@ -66,8 +70,9 @@ python -m pip install -e ".[test]"
 ```
 
 The package is built with `maturin` and can include the optional Rust
-accelerator. The codec still works without a Rust toolchain by using the
-Python scan.
+accelerator. Installing the package with a built extension activates Rust
+scanning automatically; no additional runtime setting is required. The codec
+still works without a Rust toolchain by using the Python scan.
 
 ## Use the codec
 

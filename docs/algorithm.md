@@ -51,9 +51,11 @@ The longitude-local stencil is:
 | temporal parent `(t-1,y,x)` | 1 | `t > 0` and reconstructed value is nonzero |
 
 The Rust extension implements the same arithmetic and scan order as the
-Python fallback for both float32 and float64. The codec uses the matching Rust
-entry point when the extension is importable and otherwise remains functional
-in Python.
+Python fallback for both float32 and float64. Rust selection is automatic:
+there is no codec configuration flag. When `brace_scan` is importable, the
+codec dispatches float32 fields to the float32 Rust entry point and float64
+fields to the float64 Rust entry point. If the extension or the matching
+symbol is unavailable, the codec remains functional through the Python scan.
 
 ## 3. Residual quantization
 
