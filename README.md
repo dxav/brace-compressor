@@ -145,9 +145,10 @@ codec = BraceCodec.from_recommendation(
 
 `recommend_error_bound("cc")` returns the selected mode and value as an
 `ErrorBoundRecommendation`. Range-relative and quadratic bounds are resolved
-from source data and enforced conservatively as absolute bounds. Limit,
-isovalue, missing-value, and lossless constraints remain represented in the
-recommendation plan but are not yet used to select a codec strategy.
+from source data and enforced conservatively as absolute bounds. Data limits
+and isovalues tighten per-element tolerances, missing-value recommendations
+bind the exact sentinel mask, and lossless recommendations use a raw typed-byte
+stream that preserves signed zero and NaN payloads.
 
 ### ERA5 recommendation example
 

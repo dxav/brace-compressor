@@ -96,9 +96,51 @@ def check_requirement(
     if requirement.kind == "missing-value":
         return _missing_value(original, reconstructed, requirement.value)
     if requirement.kind == "lossless":
-        passed = np.array_equal(original, reconstructed, equal_nan=True)
+        passed = (
+            np.asarray(original).dtype == np.asarray(reconstructed).dtype
+            and np.ascontiguousarray(original).tobytes()
+            == np.ascontiguousarray(reconstructed).tobytes()
+        )
         return RequirementCheck(kind=requirement.kind, passed=passed, violations=0 if passed else 1)
     raise ValueError(f"unsupported requirement kind {requirement.kind!r}")
+
+
+def constraint_error_bounds(
+    requirement: RequirementNode,
+    original: np.ndarray,
+) -> np.ndarray:
+    """Return per-element absolute tolerances for exact-value constraints."""
+
+    original = np.asarray(original)
+    if requirement.kind == "all":
+        bounds = [constraint_error_bounds(child, original) for child in requirement.children]
+        return np.minimum.reduce(bounds) if bounds else np.full(original.shape, np.inf)
+    if requirement.kind == "any":
+        raise ValueError("cannot compile an unresolved any requirement")
+    if requirement.kind == "data-limits":
+        finite = np.isfinite(original)
+        applicable = finite.copy()
+        if requirement.minimum is not None:
+            applicable &= original >= requirement.minimum
+        if requirement.maximum is not None:
+            applicable &= original <= requirement.maximum
+        bounds = np.full(original.shape, np.inf, dtype=np.float64)
+        if requirement.minimum is not None:
+            bounds[applicable] = np.minimum(
+                bounds[applicable], original[applicable] - requirement.minimum
+            )
+        if requirement.maximum is not None:
+            bounds[applicable] = np.minimum(
+                bounds[applicable], requirement.maximum - original[applicable]
+            )
+        return bounds
+    if requirement.kind == "isovalue":
+        value = float(requirement.value)
+        bounds = np.full(original.shape, np.inf, dtype=np.float64)
+        finite = np.isfinite(original)
+        bounds[finite] = np.abs(original[finite] - value)
+        return bounds
+    return np.full(original.shape, np.inf, dtype=np.float64)
 
 
 def _special_equal(original: np.ndarray, reconstructed: np.ndarray) -> np.ndarray:

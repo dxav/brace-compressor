@@ -104,6 +104,122 @@ def test_range_relative_bound_is_resolved_from_source_data():
     assert header["recommendation_checks"][0]["passed"]
 
 
+def test_data_limits_recommendation_is_verified_after_encoding():
+    recommendations = Recommendations.from_config(
+        recommendations=[
+            {
+                "filters": [
+                    {"kind": "cf-short-name", "value": "x"},
+                    {"kind": "level-kind", "value": "pressure"},
+                ],
+                "requirements": [
+                    {"kind": "data-limits", "minimum": 0.0, "maximum": 1.0}
+                ],
+            }
+        ],
+        version="0.1.0",
+        metadata={},
+    )
+    original = np.array([[[-1.0, 0.5, 2.0]]], dtype=np.float64)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=recommendations,
+    )
+
+    encoded = codec.encode(original)
+    decoded = codec.decode(encoded)
+
+    assert np.array_equal(decoded, original)
+    assert read_container(encoded).header_extra["recommendation_checks"][0]["passed"]
+
+
+def test_isovalue_recommendation_preserves_threshold_classification():
+    recommendations = Recommendations.from_config(
+        recommendations=[
+            {
+                "filters": [
+                    {"kind": "cf-short-name", "value": "x"},
+                    {"kind": "level-kind", "value": "pressure"},
+                ],
+                "requirements": [{"kind": "isovalue", "value": 0.5}],
+            }
+        ],
+        version="0.1.0",
+        metadata={},
+    )
+    original = np.array([[[-1.0, 0.5, 2.0]]], dtype=np.float64)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=recommendations,
+    )
+
+    encoded = codec.encode(original)
+    decoded = codec.decode(encoded)
+
+    assert np.sign(decoded - 0.5).tolist() == np.sign(original - 0.5).tolist()
+    assert read_container(encoded).header_extra["recommendation_checks"][0]["passed"]
+
+
+def test_missing_value_recommendation_binds_codec_sentinel():
+    recommendations = Recommendations.from_config(
+        recommendations=[
+            {
+                "filters": [
+                    {"kind": "cf-short-name", "value": "x"},
+                    {"kind": "level-kind", "value": "pressure"},
+                ],
+                "requirements": [{"kind": "missing-value", "value": -999.0}],
+            }
+        ],
+        version="0.1.0",
+        metadata={},
+    )
+    original = np.array([[[-999.0, 1.0]]], dtype=np.float64)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=recommendations,
+    )
+
+    decoded = codec.decode(codec.encode(original))
+
+    assert codec.missing_value == -999.0
+    assert np.array_equal(decoded, original)
+
+
+def test_lossless_recommendation_preserves_configured_dtype_bits():
+    recommendations = Recommendations.from_config(
+        recommendations=[
+            {
+                "filters": [
+                    {"kind": "cf-short-name", "value": "x"},
+                    {"kind": "level-kind", "value": "pressure"},
+                ],
+                "requirements": [{"kind": "lossless"}],
+            }
+        ],
+        version="0.1.0",
+        metadata={},
+    )
+    bits = np.array([0x8000000000000000, 0x7FF8000000000042], dtype=np.uint64)
+    original = bits.view(np.float64).reshape(1, 1, 2)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=recommendations,
+    )
+
+    decoded = codec.decode(codec.encode(original))
+
+    assert decoded.tobytes() == original.tobytes()
+
+
 def test_plan_preserves_all_requirements_and_selects_relative_any_branch():
     plan = plan_recommendation("pv")
 

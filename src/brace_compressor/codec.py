@@ -18,7 +18,7 @@ from numcodecs.abc import Codec
 
 from .bound import normalize_missing_value, validate_error_bound, validate_shape
 from .container import ContainerError, read_container, write_container
-from .constraints import check_requirement
+from .constraints import check_requirement, constraint_error_bounds
 from .mask import apply_mask, extract_mask, pack_mask, unpack_mask
 from .model.entropy import decode_symbols, pack_repairs, unpack_repairs
 from .model.entropy import encode_symbols as _entropy_encode
@@ -55,6 +55,7 @@ OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass
 
 _MODE_QUANTIZED = 0
 _MODE_RELATIVE = 1
+_MODE_LOSSLESS = 2
 _LOG_OFFSET = 1024.0
 
 
@@ -124,10 +125,35 @@ class BraceCodec(Codec):
                     "max-pointwise-range-relative-error-bound",
                     "mean-range-relative-error-bound",
                     "max-pointwise-quadratic-error-bound",
+                    "data-limits",
+                    "isovalue",
+                    "missing-value",
+                    "lossless",
                 }
                 for node in plan.selected
             ):
                 raise
+        missing_values = tuple(
+            node.value
+            for node in plan.selected
+            if node.kind == "missing-value" and node.value is not None
+        )
+        if missing_values:
+            recommended_missing = float(missing_values[0])
+            if "missing_value" not in kwargs:
+                kwargs["missing_value"] = recommended_missing
+                configured_missing = recommended_missing
+            else:
+                configured_missing = kwargs["missing_value"]
+            configured_missing = normalize_missing_value(configured_missing)
+            same_missing = (
+                np.isnan(recommended_missing) and np.isnan(configured_missing)
+            ) or recommended_missing == configured_missing
+            if not same_missing:
+                raise ValueError(
+                    "missing-value recommendation conflicts with codec missing_value"
+                )
+            kwargs["missing_value"] = configured_missing
         codec = cls(
             shape=shape,
             error_bound=recommendation.value,
@@ -201,6 +227,53 @@ class BraceCodec(Codec):
     def encode(self, buf) -> bytes:
         encode_start = time.perf_counter()
         field = self._as_field(buf)
+        if self.recommendation_plan is not None and any(
+            node.kind == "lossless" for node in self.recommendation_plan.selected
+        ):
+            header_extra = {
+                "shape": list(self.shape),
+                "dtype": self.dtype.name,
+                "missing_value": "nan"
+                if np.isnan(self.missing_value)
+                else float(self.missing_value),
+                "error_bound": 0.0,
+                "error_bound_mode": "absolute",
+                "quant_step": 0.0,
+                "origin": 0.0,
+                "mode": _MODE_LOSSLESS,
+                "strategy": "lossless-raw",
+                "effective_error_bound": 0.0,
+                "n_valid": int(field.size),
+                "n_symbols": 0,
+                "n_repaired": 0,
+                "mask_parts": {"missing": 0},
+                "metrics": {
+                    "max_abs_error": 0.0,
+                    "max_relative_error": 0.0,
+                    "n_repaired": 0,
+                    "uncompressed_size": int(field.nbytes),
+                    "payload_size": int(field.nbytes),
+                    "bound_respected": True,
+                },
+                "codec_version": CODEC_VERSION,
+            }
+            if self.recommendation_plan is not None:
+                header_extra["recommendation_plan"] = self.recommendation_plan.get_config()
+                header_extra["recommendation_checks"] = [
+                    check_requirement(node, field, field).get_config()
+                    for node in self.recommendation_plan.selected_tree
+                ]
+            encoded = write_container(
+                header_extra=header_extra,
+                mask_payload=b"",
+                residual_payload=field.tobytes(order="C"),
+                model_version=MODEL_VERSION,
+                outer_compress=self.outer_compress,
+            )
+            self.last_timings = {
+                "encode_total_s": time.perf_counter() - encode_start,
+            }
+            return encoded
         stage_start = time.perf_counter()
         mask = extract_mask(field, self.missing_value, dtype=self.dtype)
         valid_values = field[~mask].astype(self.dtype)
@@ -264,6 +337,21 @@ class BraceCodec(Codec):
         else:
             decoded_valid = grid3d[~mask]
             effective_bound_values = effective_bound
+        if self.recommendation_plan is not None:
+            recommendation_bounds = [
+                constraint_error_bounds(node, field)
+                for node in self.recommendation_plan.selected_tree
+            ]
+            if recommendation_bounds:
+                policy_bound = np.minimum.reduce(recommendation_bounds)
+                if np.isscalar(effective_bound_values):
+                    effective_bound_values = np.minimum(
+                        policy_bound[~mask], float(effective_bound_values)
+                    )
+                else:
+                    effective_bound_values = np.minimum(
+                        policy_bound[~mask], effective_bound_values
+                    )
         stage_start = time.perf_counter()
         repair_map, verified_errors, max_abs_error, _ = verify_and_repair(
             valid_values, decoded_valid, effective_bound_values, dtype=self.dtype
@@ -398,7 +486,7 @@ class BraceCodec(Codec):
         origin = float(h["origin"])
         n_valid = int(h["n_valid"])
         mode = int(h.get("mode", _MODE_QUANTIZED))
-        if mode not in {_MODE_QUANTIZED, _MODE_RELATIVE}:
+        if mode not in {_MODE_QUANTIZED, _MODE_RELATIVE, _MODE_LOSSLESS}:
             raise ValueError(f"unsupported codec mode {mode}")
         stream_mode = h.get(
             "error_bound_mode",
@@ -409,6 +497,21 @@ class BraceCodec(Codec):
                 f"container error_bound_mode {stream_mode!r} does not match codec "
                 f"mode {self.error_bound_mode!r}"
             )
+        if mode == _MODE_LOSSLESS:
+            expected_bytes = int(np.prod(self.shape)) * self.dtype.itemsize
+            if len(c.mask_payload) != 0 or len(c.residual_payload) != expected_bytes:
+                raise ValueError("invalid lossless raw payload length")
+            field = np.frombuffer(c.residual_payload, dtype=self.dtype).copy().reshape(
+                self.shape
+            )
+            self.last_timings = {
+                "decode_container_s": container_time,
+                "decode_total_s": time.perf_counter() - decode_start,
+            }
+            if out is not None:
+                out[...] = field.reshape(out.shape)
+                return out
+            return field
         n_symbols = int(h.get("n_symbols", n_valid))
         missing_value = h["missing_value"]
         sentinel = float("nan") if missing_value == "nan" else float(missing_value)

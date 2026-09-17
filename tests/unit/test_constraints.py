@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from brace_compressor.constraints import check_requirement
+from brace_compressor.constraints import check_requirement, constraint_error_bounds
 from brace_compressor.recommendations import RequirementNode
 
 
@@ -59,6 +59,9 @@ def test_limits_isovalue_missing_and_lossless_constraints():
     assert not check("isovalue", [0.0], [1.0], value=1.0).passed
     assert check("missing-value", [np.nan, 1.0], [np.nan, 1.0], value=np.nan).passed
     assert check("lossless", original, reconstructed).passed
+    altered_nan = reconstructed.copy()
+    altered_nan[-1] = np.asarray(0x7FF8000000000042, dtype=np.uint64).view(np.float64)
+    assert not check("lossless", original, altered_nan).passed
 
 
 def test_any_and_all_use_logical_semantics():
@@ -78,3 +81,17 @@ def test_any_and_all_use_logical_semantics():
     assert result.passed
     assert result.children[0].children[0].passed
     assert not result.children[0].children[1].passed
+
+
+def test_exact_constraint_bounds_tighten_only_applicable_values():
+    values = np.array([-1.0, 0.5, 2.0])
+    limits = RequirementNode(kind="data-limits", minimum=0.0, maximum=1.0)
+
+    np.testing.assert_allclose(
+        constraint_error_bounds(limits, values), [np.inf, 0.5, np.inf]
+    )
+
+    isovalue = RequirementNode(kind="isovalue", value=0.5)
+    np.testing.assert_allclose(
+        constraint_error_bounds(isovalue, values), [1.5, 0.0, 1.5]
+    )
