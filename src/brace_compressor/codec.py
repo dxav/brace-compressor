@@ -28,7 +28,12 @@ from .recommendations import (
     plan_recommendation,
     recommend_error_bound,
 )
-from .verify import verify_and_repair
+from .verify import (
+    measure_errors,
+    repair_mean_absolute,
+    repair_mean_relative,
+    verify_and_repair,
+)
 
 # Optional Rust-accelerated scan (bit-exact port of the Python
 # loops). Falls back to the pure-Python implementation if the extension
@@ -119,6 +124,16 @@ class BraceCodec(Codec):
             recommendation = plan.pointwise_error_bound()
         except KeyError:
             recommendation = ErrorBoundRecommendation(mode="absolute", value=0.0)
+            quadratic_values = tuple(
+                float(node.value)
+                for node in plan.selected
+                if node.kind == "max-pointwise-quadratic-error-bound"
+                and isinstance(node.value, (int, float))
+            )
+            if quadratic_values:
+                recommendation = ErrorBoundRecommendation(
+                    mode="absolute", value=max(quadratic_values)
+                )
             if not any(
                 node.kind
                 in {
@@ -154,10 +169,22 @@ class BraceCodec(Codec):
                     "missing-value recommendation conflicts with codec missing_value"
                 )
             kwargs["missing_value"] = configured_missing
+        explicit_base_bound = "error_bound" in kwargs
+        base_bound = kwargs.pop("error_bound", recommendation.value)
+        if not explicit_base_bound and any(
+            node.kind == "mean-absolute-error-bound"
+            for node in plan.selected
+        ):
+            base_bound = recommendation.value * math.sqrt(max(1, int(np.prod(shape))))
+        if not explicit_base_bound and any(
+            node.kind == "mean-relative-error-bound" for node in plan.selected
+        ):
+            base_bound = recommendation.value * math.sqrt(max(1, int(np.prod(shape))))
+        base_mode = kwargs.pop("error_bound_mode", recommendation.mode)
         codec = cls(
             shape=shape,
-            error_bound=recommendation.value,
-            error_bound_mode=recommendation.mode,
+            error_bound=base_bound,
+            error_bound_mode=base_mode,
             **kwargs,
         )
         codec.recommendation_plan = plan
@@ -291,12 +318,6 @@ class BraceCodec(Codec):
         ):
             bound = self.recommendation_plan.range_relative_error_bound(field).value
             self.error_bound = bound
-        if self.recommendation_plan is not None and any(
-            node.kind == "max-pointwise-quadratic-error-bound"
-            for node in self.recommendation_plan.selected
-        ):
-            bound = self.recommendation_plan.quadratic_error_bound(field).value
-            self.error_bound = bound
         relative = self.error_bound_mode == "relative"
         effective_bound = max(bound, float(np.finfo(self.dtype).eps))
         zero_mask = np.zeros(self.shape, dtype=bool)
@@ -356,6 +377,62 @@ class BraceCodec(Codec):
         repair_map, verified_errors, max_abs_error, _ = verify_and_repair(
             valid_values, decoded_valid, effective_bound_values, dtype=self.dtype
         )
+        mean_absolute_values = ()
+        if self.recommendation_plan is not None:
+            mean_absolute_values = tuple(
+                float(node.value)
+                for node in self.recommendation_plan.selected
+                if node.kind == "mean-absolute-error-bound"
+                and isinstance(node.value, (int, float))
+            )
+        if mean_absolute_values:
+            candidate = decoded_valid.copy()
+            if repair_map.positions.size:
+                candidate[repair_map.positions] = repair_map.values
+            aggregate_repairs, verified_errors = repair_mean_absolute(
+                valid_values,
+                candidate,
+                min(mean_absolute_values),
+                dtype=self.dtype,
+            )
+            if aggregate_repairs.positions.size:
+                repair_positions = np.concatenate(
+                    [repair_map.positions, aggregate_repairs.positions]
+                )
+                repair_values = np.concatenate(
+                    [repair_map.values, aggregate_repairs.values]
+                )
+                repair_map.positions = repair_positions
+                repair_map.values = repair_values
+            max_abs_error = float(verified_errors.max()) if verified_errors.size else 0.0
+        mean_relative_values = ()
+        if self.recommendation_plan is not None:
+            mean_relative_values = tuple(
+                float(node.value)
+                for node in self.recommendation_plan.selected
+                if node.kind == "mean-relative-error-bound"
+                and isinstance(node.value, (int, float))
+            )
+        if mean_relative_values:
+            candidate = decoded_valid.copy()
+            if repair_map.positions.size:
+                candidate[repair_map.positions] = repair_map.values
+            aggregate_repairs, verified_errors = repair_mean_relative(
+                valid_values,
+                candidate,
+                min(mean_relative_values),
+                dtype=self.dtype,
+            )
+            if aggregate_repairs.positions.size:
+                repair_positions = np.concatenate(
+                    [repair_map.positions, aggregate_repairs.positions]
+                )
+                repair_values = np.concatenate(
+                    [repair_map.values, aggregate_repairs.values]
+                )
+                repair_map.positions = repair_positions
+                repair_map.values = repair_values
+            max_abs_error = float(verified_errors.max()) if verified_errors.size else 0.0
         verify_time = time.perf_counter() - stage_start
         repair_positions, repair_values = repair_map.positions, repair_map.values
         recommendation_checks = None

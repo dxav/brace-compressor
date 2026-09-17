@@ -151,6 +151,28 @@ def test_data_limits_recommendation_is_verified_after_encoding():
     assert read_container(encoded).header_extra["recommendation_checks"][0]["passed"]
 
 
+def test_data_limits_can_use_explicit_base_bound_for_unconstrained_values():
+    recommendations = make_recommendations(
+        [{"kind": "data-limits", "minimum": 0.0, "maximum": 1.0}]
+    )
+    original = np.linspace(-2.0, 3.0, 32, dtype=np.float64).reshape(1, 1, 32)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        error_bound=0.1,
+        recommendations=recommendations,
+    )
+
+    encoded = codec.encode(original)
+    decoded = codec.decode(encoded)
+    header = read_container(encoded).header_extra
+
+    assert header["recommendation_checks"][0]["passed"]
+    assert header["n_repaired"] < original.size
+    assert np.any(decoded != original)
+
+
 def test_isovalue_recommendation_preserves_threshold_classification():
     recommendations = Recommendations.from_config(
         recommendations=[
@@ -296,6 +318,33 @@ def test_quadratic_recommendation_is_verified_after_encoding():
     codec.decode(encoded)
 
     assert read_container(encoded).header_extra["recommendation_checks"][0]["passed"]
+
+
+def test_quadratic_policy_does_not_force_unrelated_values_to_exact_repairs():
+    original = np.linspace(0.0, 10.0, 32, dtype=np.float64).reshape(1, 1, 32)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=make_recommendations(
+            [
+                {
+                    "kind": "max-pointwise-quadratic-error-bound",
+                    "value": 0.5,
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                }
+            ]
+        ),
+    )
+
+    encoded = codec.encode(original)
+    decoded = codec.decode(encoded)
+    header = read_container(encoded).header_extra
+
+    assert header["recommendation_checks"][0]["passed"]
+    assert header["n_repaired"] < original.size
+    assert np.any(decoded != original)
 
 
 def test_all_recommendation_constraints_are_verified_together():

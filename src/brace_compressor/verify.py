@@ -100,3 +100,80 @@ def verify_and_repair(
         max_abs = float(post.max()) if post.size else 0.0
 
     return repair_map, post, max_abs, int(bad.size)
+
+
+def repair_mean_absolute(
+    original: np.ndarray,
+    reconstructed: np.ndarray,
+    bound: float,
+    dtype=np.float32,
+) -> tuple[RepairMap, np.ndarray]:
+    """Repair the fewest largest errors needed to satisfy a mean bound."""
+
+    value_dtype = np.dtype(dtype)
+    original = np.asarray(original, dtype=value_dtype)
+    reconstructed = np.asarray(reconstructed, dtype=value_dtype).copy()
+    errors = measure_errors(original, reconstructed, dtype=value_dtype)
+    budget = float(bound) * int(errors.size)
+    excess = float(errors.sum()) - budget
+    if excess <= 0.0:
+        return RepairMap(), errors
+    order = np.argsort(errors)[::-1]
+    selected: list[int] = []
+    remaining = float(errors.sum())
+    for index in order:
+        selected.append(int(index))
+        remaining -= float(errors[index])
+        if remaining <= budget:
+            break
+    positions = np.asarray(selected, dtype=np.int64)
+    reconstructed[positions] = original[positions]
+    return (
+        RepairMap(positions=positions, values=original[positions]),
+        measure_errors(original, reconstructed, dtype=value_dtype),
+    )
+
+
+def repair_mean_relative(
+    original: np.ndarray,
+    reconstructed: np.ndarray,
+    bound: float,
+    dtype=np.float32,
+) -> tuple[RepairMap, np.ndarray]:
+    """Repair largest absolute errors until the weighted mean budget passes."""
+
+    value_dtype = np.dtype(dtype)
+    original = np.asarray(original, dtype=value_dtype)
+    reconstructed = np.asarray(reconstructed, dtype=value_dtype).copy()
+    errors = measure_errors(original, reconstructed, dtype=value_dtype)
+    weights = np.abs(original.astype(np.float64))
+    budget = float(bound) * float(weights.sum())
+    zero_positions = np.flatnonzero((original == 0) & (errors > 0))
+    order = np.argsort(errors)[::-1]
+    selected = list(zero_positions.astype(np.int64))
+    remaining = float(errors.sum())
+    for index in selected:
+        remaining -= float(errors[index])
+    if remaining <= budget:
+        if not selected:
+            return RepairMap(), errors
+        positions = np.asarray(sorted(set(selected)), dtype=np.int64)
+        reconstructed[positions] = original[positions]
+        return (
+            RepairMap(positions=positions, values=original[positions]),
+            measure_errors(original, reconstructed, dtype=value_dtype),
+        )
+    for index in order:
+        index = int(index)
+        if index in selected:
+            continue
+        selected.append(index)
+        remaining -= float(errors[index])
+        if remaining <= budget:
+            break
+    positions = np.asarray(sorted(set(selected)), dtype=np.int64)
+    reconstructed[positions] = original[positions]
+    return (
+        RepairMap(positions=positions, values=original[positions]),
+        measure_errors(original, reconstructed, dtype=value_dtype),
+    )

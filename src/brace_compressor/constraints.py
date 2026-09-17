@@ -140,6 +140,20 @@ def constraint_error_bounds(
         finite = np.isfinite(original)
         bounds[finite] = np.abs(original[finite] - value)
         return bounds
+    if requirement.kind == "max-pointwise-quadratic-error-bound":
+        value = float(requirement.value)
+        minimum = float(requirement.minimum)
+        maximum = float(requirement.maximum)
+        bounds = np.zeros(original.shape, dtype=np.float64)
+        if maximum <= minimum:
+            return bounds
+        finite = np.isfinite(original)
+        inside = finite & (original > minimum) & (original < maximum)
+        scale = 1.0 - (
+            2.0 * (original.astype(np.float64) - minimum) / (maximum - minimum) - 1.0
+        ) ** 2
+        bounds[inside] = scale[inside] * value
+        return bounds
     return np.full(original.shape, np.inf, dtype=np.float64)
 
 

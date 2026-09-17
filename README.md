@@ -150,6 +150,19 @@ and isovalues tighten per-element tolerances, missing-value recommendations
 bind the exact sentinel mask, and lossless recommendations use a raw typed-byte
 stream that preserves signed zero and NaN payloads.
 
+For recommendation plans that only specify exact constraints, provide an
+explicit `error_bound` to control the lossy base strategy for values not
+covered by those constraints:
+
+```python
+codec = BraceCodec.from_recommendation(
+  shape=shape,
+  variable="x",
+  error_bound=0.1,
+  recommendations=recommendations,
+)
+```
+
 ### ERA5 recommendation example
 
 The repository includes a complete example for the downloaded ERA5
