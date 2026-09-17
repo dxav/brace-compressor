@@ -34,6 +34,22 @@ import struct
 
 import numpy as np
 
+try:
+    from brace_scan import ctx_rans_decode as _rust_ctx_rans_decode
+    from brace_scan import ctx_rans_encode as _rust_ctx_rans_encode
+
+    _HAS_RUST_CTX = True
+except ImportError:  # pragma: no cover - extension optional
+    _HAS_RUST_CTX = False
+
+try:
+    from brace_scan import rans_decode as _rust_rans_decode
+    from brace_scan import rans_encode as _rust_rans_encode
+
+    _HAS_RUST_RANS = True
+except ImportError:  # pragma: no cover - extension optional
+    _HAS_RUST_RANS = False
+
 BLOCK = 2048
 MODE_RAW = 0
 MODE_RANGE = 1
@@ -162,6 +178,12 @@ def rans_encode(data: bytes, freqs: np.ndarray) -> bytes:
     rANS is a stack: decode pops in reverse of encode, so symbols are fed
     in reverse here to make the decoder recover the original order.
     """
+    if not data:
+        return b""
+    if _HAS_RUST_RANS:
+        return bytes(
+            _rust_rans_encode(data, np.ascontiguousarray(freqs, dtype=np.int64))
+        )
     cum = np.concatenate(([0], np.cumsum(freqs))).astype(np.int64)
     x = _RANS_L
     pushes: list[int] = []
@@ -189,6 +211,12 @@ def rans_decode(src: bytes, n_bytes: int, freqs: np.ndarray) -> bytes:
     """Static rANS decoder; recovers exactly ``n_bytes`` bytes (bit-exact)."""
     if n_bytes == 0:
         return b""
+    if _HAS_RUST_RANS:
+        return bytes(
+            _rust_rans_decode(
+                src, int(n_bytes), np.ascontiguousarray(freqs, dtype=np.int64)
+            )
+        )
     cum = np.concatenate(([0], np.cumsum(freqs))).astype(np.int64)
     lut = np.zeros(_RANS_M, dtype=np.uint8)
     for s in range(256):
@@ -266,6 +294,13 @@ def ctx_rans_encode(
     n = int(symbols.size)
     if n == 0:
         return b""
+    if _HAS_RUST_CTX:
+        freqs = np.ascontiguousarray(np.stack(freqs_list), dtype=np.int64)
+        return bytes(
+            _rust_ctx_rans_encode(
+                np.ascontiguousarray(symbols, dtype=np.int64), freqs, int(min_symbol)
+            )
+        )
     span = int(freqs_list[0].size)
     idx = (symbols.astype(np.int64) - min_symbol).astype(np.int64)
     # Context for each symbol (forward order): ctx of the previous symbol.
@@ -309,6 +344,11 @@ def ctx_rans_decode(
     """Context-adaptive rANS decoder; recovers exactly ``n`` symbols."""
     if n == 0:
         return np.zeros(0, dtype=np.int64)
+    if _HAS_RUST_CTX:
+        freqs = np.ascontiguousarray(np.stack(freqs_list), dtype=np.int64)
+        return np.asarray(
+            _rust_ctx_rans_decode(src, int(n), freqs, int(min_symbol)), dtype=np.int64
+        )
     span = int(freqs_list[0].size)
     cums = [np.concatenate(([0], np.cumsum(f))).astype(np.int64) for f in freqs_list]
     luts = []
