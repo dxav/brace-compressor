@@ -649,21 +649,29 @@ def encode_symbols(symbols: np.ndarray) -> bytes:
 
 def decode_symbols(payload: bytes, n: int) -> np.ndarray:
     """Decode exactly ``n`` int64 symbols from :func:`encode_symbols` output."""
+    if n < 0:
+        raise ValueError("symbol count must be non-negative")
     if n == 0:
         if payload:
             raise ValueError("non-empty payload for zero symbols")
         return np.zeros(0, dtype=np.int64)
     n_blocks = _block_count(n)
     off = 0
+    if len(payload) < _HEAD.size:
+        raise ValueError("truncated entropy header")
     (nb,) = _HEAD.unpack_from(payload, off)
     if nb != n_blocks:
         raise ValueError(f"block count mismatch: stream {nb}, expected {n_blocks}")
     off += _HEAD.size
+    if len(payload) < off + n_blocks + _RAWLEN.size:
+        raise ValueError("truncated entropy mode section")
     mode_bytes = payload[off : off + n_blocks]
     off += n_blocks
     (raw_len,) = _RAWLEN.unpack_from(payload, off)
     off += _RAWLEN.size
     raw_section = payload[off : off + raw_len]
+    if len(raw_section) != raw_len:
+        raise ValueError("truncated entropy raw section")
     off += raw_len
 
     symbols = np.empty(n, dtype=np.int64)
@@ -692,6 +700,8 @@ def decode_symbols(payload: bytes, n: int) -> np.ndarray:
         # CTX section layout: [u32 span] [i64 min_symbol] [u32 n_ctx]
         #                     [n_ctx * (u32 table_len; table varints)]
         #                     [u32 rans_len; rANS stream]
+        if len(payload) < off + 16:
+            raise ValueError("truncated context entropy header")
         (span,) = struct.unpack_from("<I", payload, off)
         off += 4
         (min_symbol,) = struct.unpack_from("<q", payload, off)
@@ -707,9 +717,14 @@ def decode_symbols(payload: bytes, n: int) -> np.ndarray:
             table_varints = payload[off : off + tbl_len]
             off += tbl_len
             freqs_list.append(varint_decode(table_varints, span).astype(np.int64))
+        if len(payload) < off + _TBL.size:
+            raise ValueError("truncated context entropy stream length")
         (rans_len,) = _TBL.unpack_from(payload, off)
         off += _TBL.size
         stream = payload[off : off + rans_len]
+        if len(stream) != rans_len:
+            raise ValueError("truncated context entropy stream")
+        off += rans_len
         total_ctx = sum(c for _, c in ctx_blocks)
         ctx_symbols = ctx_rans_decode(stream, total_ctx, freqs_list, min_symbol)
         ptr = 0
@@ -718,6 +733,9 @@ def decode_symbols(payload: bytes, n: int) -> np.ndarray:
             ptr += count
 
     if range_blocks:
+        counts_size = 2 * len(range_blocks)
+        if len(payload) < off + counts_size + 4 + _TBL.size:
+            raise ValueError("truncated range entropy header")
         counts_rb = struct.unpack_from(f"<{len(range_blocks)}H", payload, off)
         off += 2 * len(range_blocks)
         n_rb = int(sum(counts_rb))  # total varint bytes across range blocks
@@ -726,11 +744,18 @@ def decode_symbols(payload: bytes, n: int) -> np.ndarray:
         (tbl_len,) = _TBL.unpack_from(payload, off)
         off += _TBL.size
         table_varints = payload[off : off + tbl_len]
+        if len(table_varints) != tbl_len:
+            raise ValueError("truncated range frequency table")
         off += tbl_len
         freqs = varint_decode(table_varints, 256).astype(np.int64)
+        if len(payload) < off + _TBL.size:
+            raise ValueError("truncated range entropy stream length")
         (rans_len,) = _TBL.unpack_from(payload, off)
         off += _TBL.size
         stream = payload[off : off + rans_len]
+        if len(stream) != rans_len:
+            raise ValueError("truncated range entropy stream")
+        off += rans_len
         varint_stream = rans_decode(stream, int(n_rb), freqs)
         z_all = varint_decode(varint_stream, int(total_syms))
         ptr = 0
@@ -739,6 +764,8 @@ def decode_symbols(payload: bytes, n: int) -> np.ndarray:
             seg = z_all[raw_pos : raw_pos + count]
             symbols[bi * BLOCK : bi * BLOCK + count] = unzigzag(seg)
             raw_pos += count
+    if off != len(payload):
+        raise ValueError("entropy payload has trailing bytes")
     return symbols
 
 
@@ -763,15 +790,20 @@ def unpack_repairs(payload: bytes, offset: int = 0, dtype=np.float32):
     value_dtype = np.dtype(dtype)
     if value_dtype not in {np.dtype("float32"), np.dtype("float64")}:
         raise ValueError(f"repair dtype must be float32 or float64, got {dtype!r}")
+    if offset < 0 or len(payload) < offset + _REPAIR.size:
+        raise ValueError("truncated repair header")
     (count,) = _REPAIR.unpack_from(payload, offset)
     off = offset + _REPAIR.size
+    value_size = value_dtype.itemsize
+    required = count * (8 + value_size)
+    if required > len(payload) - off:
+        raise ValueError("truncated repair section")
     positions = (
         np.frombuffer(payload[off : off + count * 8], dtype="<i8").copy()
         if count
         else np.zeros(0, dtype=np.int64)
     )
     off += count * 8
-    value_size = value_dtype.itemsize
     values = (
         np.frombuffer(
             payload[off : off + count * value_size],

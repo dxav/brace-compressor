@@ -78,6 +78,22 @@ class RecommendationPlan:
             "selected": [node.get_config() for node in self.selected_tree],
         }
 
+    def select_for_data(self, data) -> "RecommendationPlan":
+        """Select ``any`` branches using the field's admissible error scale."""
+
+        import numpy as np
+
+        values = np.asarray(data)
+        return RecommendationPlan(
+            variable=self.variable,
+            markers=self.markers,
+            recommendations_version=self.recommendations_version,
+            requirements=self.requirements,
+            selected_tree=tuple(
+                _select_node(node, values) for node in self.requirements
+            ),
+        )
+
     def pointwise_error_bound(self) -> ErrorBoundRecommendation:
         """Return a conservative scalar bound for the current codec.
 
@@ -270,21 +286,58 @@ def _number_or_none(value: object) -> float | int | None:
     raise TypeError(f"requirement value must be numeric; got {value!r}")
 
 
-def _select_node(node: RequirementNode) -> RequirementNode:
+def _select_node(node: RequirementNode, data=None) -> RequirementNode:
     if node.kind == "all":
         return RequirementNode(
             kind=node.kind,
-            children=tuple(_select_node(child) for child in node.children),
+            children=tuple(_select_node(child, data) for child in node.children),
         )
     if node.kind == "any":
         if not node.children:
             raise ValueError("cannot select an empty any requirement")
-        return _select_node(min(node.children, key=_node_score))
+        if data is not None:
+            return _select_node(
+                max(node.children, key=lambda child: _node_score(child, data)), data
+            )
+        return _select_node(
+            min(node.children, key=lambda child: _node_score(child, data)), data
+        )
     return node
 
 
-def _node_score(node: RequirementNode) -> tuple[int, int, str]:
+def _node_score(node: RequirementNode, data=None):
     leaves = tuple(_leaves((_select_node(node),)))
+    if data is not None:
+        import numpy as np
+
+        values = np.asarray(data, dtype=np.float64)
+        finite = values[np.isfinite(values)]
+        mean_abs = float(np.mean(np.abs(finite))) if finite.size else 0.0
+        value_range = float(np.ptp(finite)) if finite.size else 0.0
+        tolerances = []
+        for leaf in leaves:
+            value = float(leaf.value) if isinstance(leaf.value, (int, float)) else 0.0
+            if leaf.kind in {"max-pointwise-absolute-error-bound", "mean-absolute-error-bound"}:
+                tolerances.append(value)
+            elif leaf.kind in {"max-pointwise-relative-error-bound", "mean-relative-error-bound"}:
+                tolerances.append(value * mean_abs)
+            elif leaf.kind in {"max-pointwise-range-relative-error-bound", "mean-range-relative-error-bound"}:
+                tolerances.append(value * value_range)
+            elif leaf.kind == "max-pointwise-quadratic-error-bound":
+                minimum = float(leaf.minimum)
+                maximum = float(leaf.maximum)
+                if maximum > minimum and finite.size:
+                    curve = 1.0 - (2.0 * (finite - minimum) / (maximum - minimum) - 1.0) ** 2
+                    tolerances.append(value * max(0.0, float(np.mean(curve))))
+                else:
+                    tolerances.append(0.0)
+            else:
+                tolerances.append(0.0)
+        preference = max(
+            (_KIND_PREFERENCE.get(leaf.kind, 100) for leaf in leaves),
+            default=100,
+        )
+        return (min(tolerances, default=0.0), -preference, -len(leaves), node.kind)
     scores = [_KIND_PREFERENCE.get(leaf.kind, 100) for leaf in leaves]
     return max(scores, default=100), len(scores), node.kind
 

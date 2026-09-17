@@ -253,9 +253,11 @@ def test_lossless_recommendation_preserves_configured_dtype_bits():
         recommendations=recommendations,
     )
 
-    decoded = codec.decode(codec.encode(original))
+    encoded = codec.encode(original)
+    decoded = codec.decode(encoded)
 
     assert decoded.tobytes() == original.tobytes()
+    assert read_container(encoded).header_extra["lossless_transform"] == "byte-shuffle"
 
 
 def test_mean_relative_recommendation_is_verified_after_encoding():
@@ -316,8 +318,11 @@ def test_quadratic_recommendation_is_verified_after_encoding():
 
     encoded = codec.encode(original)
     codec.decode(encoded)
+    header = read_container(encoded).header_extra
 
-    assert read_container(encoded).header_extra["recommendation_checks"][0]["passed"]
+    assert header["recommendation_checks"][0]["passed"]
+    assert header["block_size"] == 256
+    assert len(header["block_steps"]) == 1
 
 
 def test_quadratic_policy_does_not_force_unrelated_values_to_exact_repairs():
@@ -345,6 +350,34 @@ def test_quadratic_policy_does_not_force_unrelated_values_to_exact_repairs():
     assert header["recommendation_checks"][0]["passed"]
     assert header["n_repaired"] < original.size
     assert np.any(decoded != original)
+
+
+def test_quadratic_local_steps_round_trip_multiple_blocks():
+    original = np.linspace(0.0, 10.0, 513, dtype=np.float64).reshape(1, 1, 513)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float64",
+        recommendations=make_recommendations(
+            [
+                {
+                    "kind": "max-pointwise-quadratic-error-bound",
+                    "value": 0.5,
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                }
+            ]
+        ),
+    )
+
+    encoded = codec.encode(original)
+    decoded = codec.decode(encoded)
+    header = read_container(encoded).header_extra
+
+    assert len(header["block_steps"]) == 3
+    assert header["recommendation_checks"][0]["passed"]
+    assert header["n_repaired"] < original.size
+    assert decoded.shape == original.shape
 
 
 def test_all_recommendation_constraints_are_verified_together():
@@ -398,6 +431,31 @@ def test_any_recommendation_selects_one_supported_branch():
 
     assert len(plan.selected) == 1
     assert plan.selected[0].kind == "mean-relative-error-bound"
+
+
+def test_any_recommendation_uses_data_scale_for_encoding_branch():
+    original = np.array([[[1.0, 1.5, 2.0]]], dtype=np.float32)
+    codec = BraceCodec.from_recommendation(
+        shape=original.shape,
+        variable="x",
+        dtype="float32",
+        recommendations=make_recommendations(
+            [
+                {
+                    "kind": "any",
+                    "requirements": [
+                        {"kind": "max-pointwise-relative-error-bound", "value": 0.1},
+                        {"kind": "max-pointwise-absolute-error-bound", "value": 2.0},
+                    ],
+                }
+            ]
+        ),
+    )
+
+    encoded = codec.encode(original)
+    selected = read_container(encoded).header_extra["recommendation_plan"]["selected"]
+
+    assert selected[0]["kind"] == "max-pointwise-absolute-error-bound"
 
 
 def test_plan_preserves_all_requirements_and_selects_relative_any_branch():

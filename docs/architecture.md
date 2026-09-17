@@ -60,6 +60,13 @@ also exposes the public codec id, shape, bound, missing value, dtype, and
 outer-compression setting; the configuration is JSON serializable and can be
 restored with `BraceCodec.from_config()`.
 
+Recommendation metadata additionally records the source version and marker
+query, canonical requirement tree, selected `any` branch, schema version,
+strategy, and final diagnostics. Lossless streams identify their byte-shuffle
+transform; quadratic streams may identify a fixed block size and local step
+table. Decoding rejects unknown schema versions, incompatible strategies,
+malformed masks and entropy sections, and out-of-range repairs before scanning.
+
 ## Components
 
 - `codec.py`: public API and encode/decode orchestration.

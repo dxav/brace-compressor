@@ -1,5 +1,7 @@
 """Unit tests for bounds, quantization, and container framing."""
 
+import binascii
+
 import numpy as np
 import pytest
 
@@ -128,6 +130,19 @@ class TestContainer:
     def test_truncated(self):
         with pytest.raises(ContainerError):
             read_container(b"HW")
+
+    def test_unknown_flags(self):
+        data = bytearray(write_container({}, b"", b"", 1))
+        data[6:8] = (0x80).to_bytes(2, "little")
+        with pytest.raises(ContainerError, match="flags"):
+            read_container(bytes(data))
+
+    def test_trailing_bytes(self):
+        data = write_container({}, b"", b"", 1)
+        body = data[:-4] + b"extra"
+        data = body + binascii.crc32(body).to_bytes(4, "little")
+        with pytest.raises(ContainerError, match="trailing"):
+            read_container(data)
 
 
 class TestMaskUnit:

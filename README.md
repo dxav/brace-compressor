@@ -129,8 +129,10 @@ codec = BraceCodec(
 Recommendations from the typed `compression-recommendations` package can be
 applied directly. Pointwise-relative bounds are preferred when available;
 otherwise the adapter selects a pointwise absolute bound. Mean absolute and
-mean relative bounds are currently enforced conservatively pointwise, which is
-stricter than the aggregate requirement. Level-specific searches can pass
+mean relative bounds use aggregate error budgets with exact repairs for the
+largest residual contributors. `any` branches are selected against the input
+data's scale at encode time and the selected branch is recorded in metadata.
+Level-specific searches can pass
 `level_kind`, such as `"single"` or `"pressure"`.
 
 ```python
@@ -147,8 +149,9 @@ codec = BraceCodec.from_recommendation(
 `ErrorBoundRecommendation`. Range-relative and quadratic bounds are resolved
 from source data and enforced conservatively as absolute bounds. Data limits
 and isovalues tighten per-element tolerances, missing-value recommendations
-bind the exact sentinel mask, and lossless recommendations use a raw typed-byte
-stream that preserves signed zero and NaN payloads.
+bind the exact sentinel mask, and quadratic recommendations may carry
+deterministic block-local quantization steps. Lossless recommendations use a
+byte-shuffled typed-byte stream that preserves signed zero and NaN payloads.
 
 For recommendation plans that only specify exact constraints, provide an
 explicit `error_bound` to control the lossy base strategy for values not
@@ -179,7 +182,8 @@ PYTHONPATH=src python scripts/compress_era5_with_recommendations.py \
 Use `--variable cc --variable t` to run a smaller example. The package's
 pressure-level recommendations are selected from the variable's CF/GRIB short
 name; for example, `cc` uses a 1% pointwise-relative bound while `t` uses a
-0.05 pointwise-absolute bound.
+0.05 pointwise-absolute bound. The output JSON includes the selected
+requirement tree, strategy, repair count, and full requirement diagnostics.
 
 To disable the final lossless Zstandard pass explicitly:
 

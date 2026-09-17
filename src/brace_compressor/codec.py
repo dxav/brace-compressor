@@ -56,12 +56,31 @@ except Exception:  # pragma: no cover - older extension without f64 API
 
 MODEL_VERSION = 3
 CODEC_VERSION = "0.1.0"
+RECOMMENDATION_SCHEMA_VERSION = 1
 OUTER_COMPRESS_DEFAULT = True  # always-lossless CR-maximizing pass
 
 _MODE_QUANTIZED = 0
 _MODE_RELATIVE = 1
 _MODE_LOSSLESS = 2
 _LOG_OFFSET = 1024.0
+_LOCAL_BLOCK_SIZE = 256
+
+
+def _byte_shuffle(field: np.ndarray) -> bytes:
+    """Transpose element bytes so equal-significance bytes are adjacent."""
+
+    raw = np.frombuffer(field.tobytes(order="C"), dtype=np.uint8)
+    return raw.reshape(-1, field.dtype.itemsize).T.reshape(-1).tobytes()
+
+
+def _byte_unshuffle(payload: bytes, dtype: np.dtype, size: int) -> np.ndarray:
+    """Invert :func:`_byte_shuffle` into a native typed array."""
+
+    expected = size * dtype.itemsize
+    if len(payload) != expected:
+        raise ValueError("invalid lossless transformed payload length")
+    shuffled = np.frombuffer(payload, dtype=np.uint8).reshape(dtype.itemsize, size)
+    return np.ascontiguousarray(shuffled.T.reshape(-1)).view(dtype)
 
 
 class BraceCodec(Codec):
@@ -255,6 +274,10 @@ class BraceCodec(Codec):
         encode_start = time.perf_counter()
         field = self._as_field(buf)
         if self.recommendation_plan is not None and any(
+            node.kind == "any" for node in self.recommendation_plan.requirements
+        ):
+            self.recommendation_plan = self.recommendation_plan.select_for_data(field)
+        if self.recommendation_plan is not None and any(
             node.kind == "lossless" for node in self.recommendation_plan.selected
         ):
             header_extra = {
@@ -268,7 +291,8 @@ class BraceCodec(Codec):
                 "quant_step": 0.0,
                 "origin": 0.0,
                 "mode": _MODE_LOSSLESS,
-                "strategy": "lossless-raw",
+                "strategy": "lossless-byte-shuffle",
+                "lossless_transform": "byte-shuffle",
                 "effective_error_bound": 0.0,
                 "n_valid": int(field.size),
                 "n_symbols": 0,
@@ -283,6 +307,7 @@ class BraceCodec(Codec):
                     "bound_respected": True,
                 },
                 "codec_version": CODEC_VERSION,
+                "recommendation_schema_version": RECOMMENDATION_SCHEMA_VERSION,
             }
             if self.recommendation_plan is not None:
                 header_extra["recommendation_plan"] = self.recommendation_plan.get_config()
@@ -293,7 +318,7 @@ class BraceCodec(Codec):
             encoded = write_container(
                 header_extra=header_extra,
                 mask_payload=b"",
-                residual_payload=field.tobytes(order="C"),
+                residual_payload=_byte_shuffle(field),
                 model_version=MODEL_VERSION,
                 outer_compress=self.outer_compress,
             )
@@ -338,9 +363,36 @@ class BraceCodec(Codec):
         else:
             step = derive_step(bound, dtype=self.dtype)
             prior = np.full(self.shape, 32.0, dtype=self.dtype)
+        block_steps = None
+        if self.recommendation_plan is not None and any(
+            node.kind == "max-pointwise-quadratic-error-bound"
+            for node in self.recommendation_plan.selected
+        ):
+            policy_bounds = [
+                constraint_error_bounds(node, field)
+                for node in self.recommendation_plan.selected_tree
+            ]
+            if policy_bounds:
+                local_bounds = np.minimum.reduce(policy_bounds).reshape(-1)
+                n_blocks = (field.size + _LOCAL_BLOCK_SIZE - 1) // _LOCAL_BLOCK_SIZE
+                block_steps = []
+                for block_index in range(n_blocks):
+                    start = block_index * _LOCAL_BLOCK_SIZE
+                    stop = min(start + _LOCAL_BLOCK_SIZE, field.size)
+                    values = local_bounds[start:stop]
+                    finite = values[np.isfinite(values) & (values > 0.0)]
+                    local_bound = float(finite.min()) if finite.size else float(
+                        np.finfo(self.dtype).eps
+                    )
+                    block_steps.append(derive_step(local_bound, dtype=self.dtype))
         stage_start = time.perf_counter()
         symbols, recon_rows, origin = self._causal_scan_encode(
-            scan_field, scan_mask, prior, step, use_rust=not relative
+            scan_field,
+            scan_mask,
+            prior,
+            step,
+            block_steps=block_steps,
+            use_rust=not relative,
         )
         scan_time = time.perf_counter() - stage_start
         # --- Verify-and-repair: compare against the effective bound -------
@@ -473,8 +525,13 @@ class BraceCodec(Codec):
             "error_bound": float(bound),
             "error_bound_mode": self.error_bound_mode,
             "quant_step": step,
+            "block_size": _LOCAL_BLOCK_SIZE if block_steps is not None else None,
+            "block_steps": block_steps,
             "origin": float(origin),
             "mode": mode,
+            "strategy": "relative-scalar" if relative else (
+                "absolute-block-local" if block_steps is not None else "absolute-scalar"
+            ),
             "effective_error_bound": float(effective_bound),
             "n_valid": int(valid_values.size),
             "n_symbols": int(symbols.size),
@@ -501,6 +558,7 @@ class BraceCodec(Codec):
                 ),
             },
             "codec_version": CODEC_VERSION,
+            "recommendation_schema_version": RECOMMENDATION_SCHEMA_VERSION,
         }
         if self.recommendation_plan is not None:
             header_extra["recommendation_plan"] = self.recommendation_plan.get_config()
@@ -548,6 +606,13 @@ class BraceCodec(Codec):
                 f"this codec supports {MODEL_VERSION}"
             )
         h = c.header_extra
+        if not isinstance(h, dict):
+            raise ValueError("container header-extra must be an object")
+        schema_version = h.get("recommendation_schema_version", 1)
+        if schema_version != RECOMMENDATION_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported recommendation schema version {schema_version!r}"
+            )
         stream_dtype = np.dtype(h.get("dtype", "float32"))
         if stream_dtype != self.dtype:
             raise ValueError(
@@ -560,11 +625,33 @@ class BraceCodec(Codec):
                 f"container shape {shape} does not match codec shape {self.shape}"
             )
         step = float(h["quant_step"])
+        block_size = h.get("block_size")
+        block_steps = h.get("block_steps")
+        if block_steps is not None:
+            if block_size != _LOCAL_BLOCK_SIZE or len(block_steps) != (
+                int(np.prod(self.shape)) + _LOCAL_BLOCK_SIZE - 1
+            ) // _LOCAL_BLOCK_SIZE:
+                raise ValueError("invalid local quantization metadata")
+            block_steps = [float(value) for value in block_steps]
+            if not block_steps or not all(
+                math.isfinite(value) and value > 0.0 for value in block_steps
+            ):
+                raise ValueError("local quantization steps must be finite and positive")
         origin = float(h["origin"])
         n_valid = int(h["n_valid"])
+        if n_valid < 0 or n_valid > int(np.prod(self.shape)):
+            raise ValueError("invalid valid-element count")
         mode = int(h.get("mode", _MODE_QUANTIZED))
         if mode not in {_MODE_QUANTIZED, _MODE_RELATIVE, _MODE_LOSSLESS}:
             raise ValueError(f"unsupported codec mode {mode}")
+        strategy = h.get("strategy", "absolute-scalar")
+        valid_strategies = {
+            _MODE_LOSSLESS: {"lossless-raw", "lossless-byte-shuffle"},
+            _MODE_RELATIVE: {"relative-scalar"},
+            _MODE_QUANTIZED: {"absolute-scalar", "absolute-block-local"},
+        }
+        if strategy not in valid_strategies[mode]:
+            raise ValueError(f"strategy {strategy!r} is incompatible with mode {mode}")
         stream_mode = h.get(
             "error_bound_mode",
             "relative" if mode == _MODE_RELATIVE else "absolute",
@@ -577,10 +664,18 @@ class BraceCodec(Codec):
         if mode == _MODE_LOSSLESS:
             expected_bytes = int(np.prod(self.shape)) * self.dtype.itemsize
             if len(c.mask_payload) != 0 or len(c.residual_payload) != expected_bytes:
-                raise ValueError("invalid lossless raw payload length")
-            field = np.frombuffer(c.residual_payload, dtype=self.dtype).copy().reshape(
-                self.shape
-            )
+                raise ValueError("invalid lossless payload length")
+            transform = h.get("lossless_transform", "raw")
+            if transform == "byte-shuffle":
+                field = _byte_unshuffle(
+                    c.residual_payload, self.dtype, int(np.prod(self.shape))
+                ).reshape(self.shape)
+            elif transform == "raw":
+                field = np.frombuffer(c.residual_payload, dtype=self.dtype).copy().reshape(
+                    self.shape
+                )
+            else:
+                raise ValueError(f"unsupported lossless transform {transform!r}")
             self.last_timings = {
                 "decode_container_s": container_time,
                 "decode_total_s": time.perf_counter() - decode_start,
@@ -608,6 +703,11 @@ class BraceCodec(Codec):
             zero_mask = unpack_mask(c.mask_payload[offset : offset + zero_size], n_elements).reshape(self.shape)
             offset += zero_size
             negative_mask = unpack_mask(c.mask_payload[offset : offset + negative_size], n_elements).reshape(self.shape)
+            offset += negative_size
+            if offset != len(c.mask_payload):
+                raise ValueError("relative mask payload has trailing bytes")
+            if np.any(zero_mask & (mask | negative_mask)) or np.any(negative_mask & mask):
+                raise ValueError("relative special-value masks overlap")
             scan_mask = mask | zero_mask
         else:
             mask = unpack_mask(c.mask_payload, n_elements).reshape(self.shape)
@@ -618,11 +718,20 @@ class BraceCodec(Codec):
         if len(payload) < 8:
             raise ValueError("residual payload too short")
         (ent_len,) = struct.unpack_from("<Q", payload, 0)
+        if ent_len > len(payload) - 8:
+            raise ValueError("entropy section exceeds residual payload")
+        if n_symbols > n_valid:
+            raise ValueError("symbol count exceeds valid-element count")
         stage_start = time.perf_counter()
         symbols = decode_symbols(payload[8 : 8 + ent_len], n_symbols)
         repair_positions, repair_values, _ = unpack_repairs(
             payload, 8 + ent_len, dtype=self.dtype
         )
+        repair_end = 8 + ent_len + 4 + repair_positions.size * (8 + self.dtype.itemsize)
+        if repair_end != len(payload):
+            raise ValueError("repair payload has trailing bytes")
+        if np.any(repair_positions < 0) or np.any(repair_positions >= n_valid):
+            raise ValueError("repair index outside valid-element range")
         entropy_time = time.perf_counter() - stage_start
         # --- Causal scan (identical walk to encode) ----------------------
         relative = mode == _MODE_RELATIVE
@@ -636,6 +745,7 @@ class BraceCodec(Codec):
             symbols,
             step,
             origin,
+            block_steps=block_steps,
             use_rust=not relative and self.dtype in {np.dtype("float32"), np.dtype("float64")},
         )
         scan_time = time.perf_counter() - stage_start
@@ -678,7 +788,9 @@ class BraceCodec(Codec):
     # ------------------------------------------------------------------
     # Causal scan: identical encode/decode walk
     # ------------------------------------------------------------------
-    def _causal_scan_encode(self, field, mask, prior, step, use_rust=True):
+    def _causal_scan_encode(
+        self, field, mask, prior, step, block_steps=None, use_rust=True
+    ):
         """Fused encode-side scan (single pass).
 
         Predicts each valid cell from already-reconstructed
@@ -689,7 +801,7 @@ class BraceCodec(Codec):
         when available (bit-exact), else the pure-Python loops.
         Returns (symbols, recon_rows, origin).
         """
-        if use_rust and _HAS_RUST and self.dtype == np.dtype("float32"):
+        if block_steps is None and use_rust and _HAS_RUST and self.dtype == np.dtype("float32"):
             symbols, recon_rows = _rs_scan_encode(
                 np.ascontiguousarray(field, dtype=np.float32),
                 np.ascontiguousarray(mask),
@@ -697,7 +809,7 @@ class BraceCodec(Codec):
                 float(step),
             )
             return symbols, recon_rows, 0.0
-        if use_rust and _HAS_RUST_F64 and self.dtype == np.dtype("float64"):
+        if block_steps is None and use_rust and _HAS_RUST_F64 and self.dtype == np.dtype("float64"):
             symbols, recon_rows = _rs_scan_encode_f64(
                 np.ascontiguousarray(field, dtype=np.float64),
                 np.ascontiguousarray(mask),
@@ -712,7 +824,6 @@ class BraceCodec(Codec):
         fld = field
         msk = mask
         step_f = float(step)
-        inv_step = 1.0 / step_f  # step > 0 in this path
         lo = -(1 << 31) + 1
         hi = (1 << 31) - 1
         prior_np = np.asarray(prior, dtype=np.float64)
@@ -748,22 +859,28 @@ class BraceCodec(Codec):
                     else:
                         pred = prior_np[ti, yi, xi]
                     r = float(fld[ti, yi, xi]) - pred
-                    q = int(math.floor(r * inv_step + 0.5))
+                    flat_index = (ti * lat + yi) * lon + xi
+                    local_step = (
+                        float(block_steps[flat_index // _LOCAL_BLOCK_SIZE])
+                        if block_steps is not None
+                        else step_f
+                    )
+                    q = int(math.floor(r / local_step + 0.5))
                     if q < lo:
                         q = lo
                     elif q > hi:
                         q = hi
                     symbols[k] = q
                     # decoder state: pred + dequantized residual (origin=0)
-                    recon_rows[row, xi] = pred + q * step_f
+                    recon_rows[row, xi] = pred + q * local_step
                     k += 1
         return symbols, recon_rows, 0.0
 
     def _causal_scan_decode(
-        self, prior, mask, symbols, step, origin, use_rust=True
+        self, prior, mask, symbols, step, origin, block_steps=None, use_rust=True
     ):
         """Decoder mirror of :meth:`_causal_scan_encode` (same order/math)."""
-        if _HAS_RUST and use_rust and self.dtype == np.dtype("float32"):
+        if block_steps is None and _HAS_RUST and use_rust and self.dtype == np.dtype("float32"):
             return _rs_scan_decode(
                 np.ascontiguousarray(prior, dtype=np.float32),
                 np.ascontiguousarray(mask),
@@ -771,7 +888,7 @@ class BraceCodec(Codec):
                 float(step),
                 float(origin),
             )
-        if _HAS_RUST_F64 and use_rust and self.dtype == np.dtype("float64"):
+        if block_steps is None and _HAS_RUST_F64 and use_rust and self.dtype == np.dtype("float64"):
             return _rs_scan_decode_f64(
                 np.ascontiguousarray(prior, dtype=np.float64),
                 np.ascontiguousarray(mask),
@@ -812,7 +929,13 @@ class BraceCodec(Codec):
                         pred = sum(p * w for p, w in zip(preds, wts)) / sum(wts)
                     else:
                         pred = prior_np[ti, yi, xi]
-                    dq = int(symbols[k]) * step_f + origin
+                    flat_index = (ti * lat + yi) * lon + xi
+                    local_step = (
+                        float(block_steps[flat_index // _LOCAL_BLOCK_SIZE])
+                        if block_steps is not None
+                        else step_f
+                    )
+                    dq = int(symbols[k]) * local_step + origin
                     recon_rows[row, xi] = pred + dq
                     k += 1
         return recon_rows

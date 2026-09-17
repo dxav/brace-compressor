@@ -11,6 +11,7 @@ import numpy as np
 import xarray as xr
 
 from brace_compressor import BraceCodec, recommend_error_bound
+from brace_compressor.container import read_container
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,6 +58,11 @@ def measure_variable(name: str, data_array: xr.DataArray) -> dict[str, object]:
     decode_start = time.perf_counter()
     decoded = codec.decode(encoded)
     decode_seconds = time.perf_counter() - decode_start
+    header = read_container(encoded).header_extra
+    diagnostics = header.get("recommendation_checks", [])
+    requirements_passed = all(
+        bool(check.get("passed", False)) for check in diagnostics
+    )
 
     finite = np.isfinite(original)
     difference = np.abs(decoded.astype(np.float64) - original.astype(np.float64))
@@ -89,6 +95,12 @@ def measure_variable(name: str, data_array: xr.DataArray) -> dict[str, object]:
         "max_error": max_error,
         "bound_violations": int(violations.sum()),
         "zero_mismatches": int(np.count_nonzero((original == 0) != (decoded == 0))),
+        "selected_requirements": header.get("recommendation_plan", {}).get("selected", []),
+        "strategy": header.get("strategy"),
+        "n_repaired": int(header.get("n_repaired", 0)),
+        "recommendation_checks": diagnostics,
+        "all_requirements_passed": requirements_passed,
+        "fallback": header.get("strategy") in {"absolute-scalar", "relative-scalar"},
     }
 
 
@@ -109,11 +121,16 @@ def main() -> None:
                 f"bound={result['bound']:g} "
                 f"CR={result['compression_ratio']:.3f}x "
                 f"max_error={result['max_error']:.6g} "
-                f"violations={result['bound_violations']}"
+                f"violations={result['bound_violations']} "
+                f"strategy={result['strategy']} "
+                f"requirements={'pass' if result['all_requirements_passed'] else 'FAIL'}"
             )
 
     if not results:
         raise SystemExit("No variables selected or found in the dataset")
+    failed = [result["variable"] for result in results if not result["all_requirements_passed"]]
+    if failed:
+        raise SystemExit(f"Recommendation requirements failed for: {', '.join(failed)}")
     total_input = sum(int(result["input_bytes"]) for result in results)
     total_encoded = sum(int(result["encoded_bytes"]) for result in results)
     output = {

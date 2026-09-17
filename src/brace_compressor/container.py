@@ -134,7 +134,7 @@ def read_container(buf) -> Container:
     data = bytes(buf)
     if len(data) >= _HEADER_PREFIX.size:
         # Structural checks first (nicer errors than a bare CRC mismatch).
-        magic, version = _HEADER_PREFIX.unpack(data[: _HEADER_PREFIX.size])[:2]
+        magic, version, flags = _HEADER_PREFIX.unpack(data[: _HEADER_PREFIX.size])[:3]
         if magic != MAGIC:
             raise ContainerError(f"bad magic {magic!r}; not a BRCE container")
         if version != CONTAINER_VERSION:
@@ -142,6 +142,8 @@ def read_container(buf) -> Container:
                 f"unsupported container version {version}; "
                 f"this codec supports {CONTAINER_VERSION}"
             )
+        if flags & ~(FLAG_OUTER_COMPRESSED | FLAG_MASK_COMPRESSED | FLAG_RESIDUAL_COMPRESSED):
+            raise ContainerError(f"unsupported container flags {flags:#x}")
 
     if len(data) < _HEADER_PREFIX.size + _CRC32.size:
         raise ContainerError(
@@ -168,6 +170,8 @@ def read_container(buf) -> Container:
         header_extra = json.loads(header_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ContainerError(f"invalid header-extra JSON: {exc}") from exc
+    if not isinstance(header_extra, dict):
+        raise ContainerError("header-extra JSON must be an object")
     offset += header_len
 
     def _take_payload() -> bytes:
@@ -184,6 +188,8 @@ def read_container(buf) -> Container:
 
     mask_payload = _take_payload()
     residual_payload = _take_payload()
+    if offset != len(body):
+        raise ContainerError("unexpected trailing bytes after payload sections")
 
     mask_payload = _decompress_if_needed(
         mask_payload,
