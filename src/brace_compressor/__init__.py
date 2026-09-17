@@ -1,13 +1,25 @@
 """BRACE: bounded residual adaptive compression for gridded data."""
 
 from .codec import BraceCodec
-from .recommendations import ErrorBoundRecommendation, load_recommendations
-from .recommendations import recommend_error_bound
+from .constraints import RequirementCheck, check_requirement
+from .recommendations import (
+    ErrorBoundRecommendation,
+    RecommendationPlan,
+    RequirementNode,
+    load_recommendations,
+    plan_recommendation,
+    recommend_error_bound,
+)
 
 __all__ = [
     "BraceCodec",
     "ErrorBoundRecommendation",
+    "RecommendationPlan",
+    "RequirementCheck",
+    "RequirementNode",
+    "check_requirement",
     "load_recommendations",
+    "plan_recommendation",
     "recommend_error_bound",
 ]
 

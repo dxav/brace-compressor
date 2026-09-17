@@ -128,7 +128,10 @@ codec = BraceCodec(
 
 Recommendations from the typed `compression-recommendations` package can be
 applied directly. Pointwise-relative bounds are preferred when available;
-otherwise the adapter selects a pointwise absolute bound.
+otherwise the adapter selects a pointwise absolute bound. Mean absolute and
+mean relative bounds are currently enforced conservatively pointwise, which is
+stricter than the aggregate requirement. Level-specific searches can pass
+`level_kind`, such as `"single"` or `"pressure"`.
 
 ```python
 from brace_compressor import BraceCodec
@@ -142,7 +145,9 @@ codec = BraceCodec.from_recommendation(
 
 `recommend_error_bound("cc")` returns the selected mode and value as an
 `ErrorBoundRecommendation`. Requirements with other semantics, such as
-range-relative bounds, are not silently reinterpreted.
+range-relative, quadratic, limit, isovalue, missing-value, and lossless
+constraints, remain represented in the recommendation plan but are not yet
+used to select a codec strategy.
 
 ### ERA5 recommendation example
 

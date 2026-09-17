@@ -1,12 +1,15 @@
 """Tests for typed compression-recommendation integration."""
 
 import pytest
+import numpy as np
 
 from brace_compressor.recommendations import (
     ErrorBoundRecommendation,
+    plan_recommendation,
     recommend_error_bound,
 )
 from brace_compressor import BraceCodec
+from brace_compressor.container import read_container
 
 
 def test_relative_recommendation_is_extracted_from_typed_model():
@@ -45,3 +48,43 @@ def test_codec_factory_applies_recommendation():
 
     assert codec.error_bound == 0.01
     assert codec.error_bound_mode == "relative"
+
+
+def test_codec_factory_conservatively_supports_mean_absolute_requirement():
+    codec = BraceCodec.from_recommendation(
+        shape=(1, 1, 1), variable="tp", level_kind="single", dtype="float64"
+    )
+
+    assert codec.error_bound == 1e-5
+    assert codec.error_bound_mode == "absolute"
+
+
+def test_codec_factory_records_plan_and_constraint_diagnostics():
+    codec = BraceCodec.from_recommendation(
+        shape=(1, 1, 2), variable="cc", dtype="float64"
+    )
+
+    encoded = codec.encode(np.array([[[1.0, 2.0]]], dtype=np.float64))
+    header = read_container(encoded).header_extra
+
+    assert header["recommendation_plan"]["variable"] == "cc"
+    assert header["recommendation_checks"][0]["passed"]
+
+
+def test_plan_preserves_all_requirements_and_selects_relative_any_branch():
+    plan = plan_recommendation("pv")
+
+    assert plan.requirements[0].kind == "any"
+    assert plan.requirements[0].children[0].children[0].kind == (
+        "max-pointwise-absolute-error-bound"
+    )
+    assert plan.selected[0].kind == "max-pointwise-relative-error-bound"
+    assert plan.selected[0].value == 0.1
+
+
+def test_plan_preserves_mean_requirement_tree():
+    plan = plan_recommendation("tp", level_kind="single")
+
+    assert plan.requirements[0].kind == "any"
+    assert plan.selected[0].kind == "mean-absolute-error-bound"
+    assert plan.selected[0].value == 1e-5

@@ -18,11 +18,12 @@ from numcodecs.abc import Codec
 
 from .bound import normalize_missing_value, validate_error_bound, validate_shape
 from .container import ContainerError, read_container, write_container
+from .constraints import check_requirement
 from .mask import apply_mask, extract_mask, pack_mask, unpack_mask
 from .model.entropy import decode_symbols, pack_repairs, unpack_repairs
 from .model.entropy import encode_symbols as _entropy_encode
 from .quant import derive_step
-from .recommendations import recommend_error_bound
+from .recommendations import plan_recommendation, recommend_error_bound
 from .verify import verify_and_repair
 
 # Optional Rust-accelerated scan (bit-exact port of the Python
@@ -88,18 +89,36 @@ class BraceCodec(Codec):
             raise ValueError("error_bound_mode must be 'absolute' or 'relative'")
         self.error_bound_mode = error_bound_mode
         self.last_timings: dict[str, float] = {}
+        self.recommendation_plan = None
 
     @classmethod
-    def from_recommendation(cls, *, shape, variable: str, **kwargs) -> "BraceCodec":
+    def from_recommendation(
+        cls,
+        *,
+        shape,
+        variable: str,
+        level_kind: str = "pressure",
+        markers=None,
+        recommendations=None,
+        **kwargs,
+    ) -> "BraceCodec":
         """Create a codec using the typed recommendation for ``variable``."""
 
-        recommendation = recommend_error_bound(variable)
-        return cls(
+        plan = plan_recommendation(
+            variable,
+            level_kind=level_kind,
+            markers=markers,
+            recommendations=recommendations,
+        )
+        recommendation = plan.pointwise_error_bound()
+        codec = cls(
             shape=shape,
             error_bound=recommendation.value,
             error_bound_mode=recommendation.mode,
             **kwargs,
         )
+        codec.recommendation_plan = plan
+        return codec
 
     # ------------------------------------------------------------------
     # Configuration contract (numcodecs.Codec)
@@ -218,6 +237,18 @@ class BraceCodec(Codec):
         )
         verify_time = time.perf_counter() - stage_start
         repair_positions, repair_values = repair_map.positions, repair_map.values
+        recommendation_checks = None
+        if self.recommendation_plan is not None:
+            repaired_valid = decoded_valid.copy()
+            if repair_positions.size:
+                repaired_valid[repair_positions] = repair_values
+            reconstructed = np.empty_like(field)
+            reconstructed[~mask] = repaired_valid
+            reconstructed[mask] = self.missing_value
+            recommendation_checks = [
+                check_requirement(node, field, reconstructed).get_config()
+                for node in self.recommendation_plan.selected_tree
+            ]
         # --- Entropy coding (bit-exact; per-block mode selection) ----------
         stage_start = time.perf_counter()
         encoded_syms = _entropy_encode(symbols)
@@ -273,6 +304,9 @@ class BraceCodec(Codec):
             },
             "codec_version": CODEC_VERSION,
         }
+        if self.recommendation_plan is not None:
+            header_extra["recommendation_plan"] = self.recommendation_plan.get_config()
+            header_extra["recommendation_checks"] = recommendation_checks
         stage_start = time.perf_counter()
         encoded = write_container(
             header_extra=header_extra,
