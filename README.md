@@ -144,6 +144,24 @@ codec = BraceCodec.from_recommendation(
 `ErrorBoundRecommendation`. Requirements with other semantics, such as
 range-relative bounds, are not silently reinterpreted.
 
+### ERA5 recommendation example
+
+The repository includes a complete example for the downloaded ERA5
+pressure-level challenge dataset. It loads each variable, extracts its typed
+recommendation, compresses and decompresses it, checks the selected bound, and
+writes JSON results:
+
+```bash
+PYTHONPATH=src python scripts/compress_era5_with_recommendations.py \
+  --input data/era5_pressure_20260715T1200_4levels.nc \
+  --output data/era5_pressure_recommendation_example.json
+```
+
+Use `--variable cc --variable t` to run a smaller example. The package's
+pressure-level recommendations are selected from the variable's CF/GRIB short
+name; for example, `cc` uses a 1% pointwise-relative bound while `t` uses a
+0.05 pointwise-absolute bound.
+
 To disable the final lossless Zstandard pass explicitly:
 
 ```python
