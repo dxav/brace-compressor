@@ -3,13 +3,13 @@
 ## Requirements
 
 - Python 3.11 or newer
-- A working C/Rust toolchain only when building the optional Rust extension
+- A C/Rust toolchain only when building the optional Rust extension
 - `numpy`, `numcodecs`, and the test extras from `pyproject.toml`
 
-The Python implementation is always the correctness fallback. A Rust build is
-an optimization, not a prerequisite for using the codec.
+The Python implementation is always the correctness fallback. Rust is an
+optimization, not a prerequisite for using the codec.
 
-## Install from a checkout
+## Install From A Checkout
 
 ```bash
 python -m venv .venv
@@ -18,49 +18,41 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[test]"
 ```
 
-The package uses `maturin` as its build backend because the optional
-`brace_scan` extension is part of the distribution. If a local Rust toolchain
-is unavailable, install the Python dependencies directly and run from the
-checkout with `PYTHONPATH=src`.
+The package uses `maturin` for the optional `brace_scan` extension. Without a
+Rust toolchain, install the Python dependencies and run from the checkout with
+`PYTHONPATH=src`.
 
-## Build the Rust accelerator
+## Build The Rust Accelerator
 
 ```bash
 cargo build --manifest-path rust/brace_scan/Cargo.toml --release
 python -m pip install -e .
 ```
 
-The extension is organized by responsibility:
-
-- `rust/brace_scan/src/scan.rs` contains the float32 and float64 causal scan;
-- `rust/brace_scan/src/rans.rs` contains static RANGE and context-adaptive CTX
-  rANS;
-- `rust/brace_scan/src/lib.rs` registers both groups with Python.
-
-The public codec selects scan and entropy functions automatically when the
-matching symbols are importable; there is no separate runtime activation
-setting. If the extension is absent or a symbol is unavailable, the relevant
-Python implementation remains the correctness fallback. Rust and Python use
-the same stream format, so the extension changes execution time but not
-compatibility.
+The extension contains the float32/float64 causal scan and static/context
+adaptive rANS implementations. The codec selects matching Rust functions
+automatically and falls back to Python when unavailable. Both implementations
+use the same stream format and arithmetic.
 
 ## Tests
 
 From the repository root:
 
 ```bash
-PYTHONPATH=. pytest tests -q
-PYTHONPATH=. pytest tests/unit -q
-PYTHONPATH=. pytest tests/integration -q
+PYTHONPATH=src pytest tests -q
+PYTHONPATH=src pytest tests/unit -q
+PYTHONPATH=src pytest tests/integration -q
 ```
 
-`PYTHONPATH=.` avoids a name collision with an unrelated installed package
-called `tests` on some environments. The expected current result is 74 tests
-when running the full suite.
+The current full suite contains 113 tests. Recommendation tests cover all
+supported requirement families, nested `any`/`all` plans, CR-aware candidate
+selection, aggregate repairs, local quadratic steps, lossless byte transforms,
+and malformed metadata cases.
 
-The test groups are:
+Test groups:
 
-- `tests/unit`: bounds, quantization, masks, container framing, and entropy;
+- `tests/unit`: bounds, quantization, masks, containers, entropy, constraints,
+  and recommendation planning;
 - `tests/contract`: `numcodecs` API, registry, config, and output buffers;
 - `tests/integration`: error guarantees, missing values, bound sweeps, and
   space-time compression.
@@ -70,41 +62,50 @@ The test groups are:
 Synthetic field:
 
 ```bash
-.venv/bin/python scripts/compress_stats.py \
+PYTHONPATH=src python scripts/compress_stats.py \
   --shape 8 90 180 --bound 0.05
 ```
 
-The benchmark enables the lossless outer Zstandard pass by default. Use
+The benchmark enables lossless outer Zstandard compression by default. Use
 `--no-outer-compress` to measure the entropy-coded container without that final
-pass. The equivalent Python setting is `BraceCodec(...,
-outer_compress=False)`.
+pass. The equivalent setting is `BraceCodec(..., outer_compress=False)`.
 
-Real NetCDF field:
-
-The repository does not include the reference dataset. Download and prepare
-the benchmark input as described in the [README](../README.md), or run:
+HOAPS NetCDF field:
 
 ```bash
-.venv/bin/python -m pip install -e ".[analysis]"
-mkdir -p data
-curl -L --fail --output data/HOAPS_2020-08_6-hourly.nc \
-  https://object-store.os-api.cci1.ecmwf.int/esiwacebucket/HOAPS/HOAPS_2020-08_6-hourly.nc
-.venv/bin/python scripts/compress_stats.py \
+python -m pip install -e ".[analysis]"
+PYTHONPATH=src python scripts/compress_stats.py \
   --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa --bound 0.05
 ```
 
 Bound sweep:
 
 ```bash
-.venv/bin/python scripts/compress_stats.py \
-  --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa --sweep 0.01 0.05 0.2
+PYTHONPATH=src python scripts/compress_stats.py \
+  --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa \
+  --sweep 0.01 0.05 0.2
 ```
 
-The benchmark independently checks maximum valid-value error, mask identity,
-RMSE, timing, container metrics, and compression ratio. `--json` emits data
-for automation, including `stage_timings` for mask handling, scan, verification,
-entropy coding, container work, and decode restoration. The same timing data is
-available in memory as `codec.last_timings` after each `encode` or `decode`.
+Typed recommendation benchmark:
+
+```bash
+PYTHONPATH=src python scripts/compress_era5_with_recommendations.py \
+  --input data/era5_pressure_20260715T1200_4levels.nc \
+  --output data/era5_pressure_recommendation_example.json
+```
+
+This benchmark encodes and decodes every selected variable, records the full
+selected requirement tree and diagnostics, reports the winning strategy and
+repair count, and exits nonzero if an active requirement fails. For an `any`
+plan, complete candidate streams are compared by final encoded size. Scalar
+reference metrics are reported separately when they do not describe the
+selected branch.
+
+The regular benchmark independently checks maximum valid-value error, mask
+identity, RMSE, timing, container metrics, and compression ratio. With
+`--json`, it emits stage timings for mask handling, scan, verification, entropy,
+container work, and decode restoration. The same timing data is available in
+`codec.last_timings`.
 
 ## Public API
 
@@ -122,16 +123,15 @@ config = codec.get_config()
 restored = BraceCodec.from_config(config)
 ```
 
-`field` must represent float32 values with the configured shape. `decode` can
-write into a C-contiguous writable float32 `out` array of the same byte size.
-`BraceCodec` inherits from `numcodecs.abc.Codec` and registers itself under
-`brace` when `brace_compressor` is imported.
+`BraceCodec` inherits from `numcodecs.abc.Codec` and registers as `brace` when
+`brace_compressor` is imported. The configured dtype must be `float32` or
+`float64`; `decode` can write into a compatible writable output array.
 
-## Change discipline
+## Change Discipline
 
-Keep encode and decode changes paired. Any predictor arithmetic, scan order,
-quantization rule, entropy layout, or container flag change can affect stream
-compatibility and must update `MODEL_VERSION`, tests, and the algorithm/format
-documentation as appropriate. Do not use original field values in decode-time
-prediction. Run the full suite and a real-data benchmark before changing the
-reported performance numbers.
+Keep encode and decode changes paired. Predictor arithmetic, scan order,
+quantization rules, entropy layout, container flags, or recommendation schema
+changes must update model/schema validation, tests, and the algorithm and
+format documentation. Do not use original field values in decode-time
+prediction. Run the full suite, static diagnostics, `git diff --check`, and a
+real-data benchmark before changing reported performance numbers.

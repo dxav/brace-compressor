@@ -165,7 +165,43 @@ stream cannot leave a positive-bound violation unless the configured dtype
 itself cannot represent the requested comparison, which is outside the codec's
 value domain.
 
-## 6. Container and outer compression
+## 6. Typed recommendation planning
+
+The typed `compression-recommendations` package is adapted into a canonical
+`RequirementNode` tree. The plan retains the source package version, marker
+query, complete requirement tree, selected tree, and strategy metadata.
+
+The combinators retain their logical meaning:
+
+- `all` activates every child. Pointwise policies are intersected, while mean
+  requirements retain their aggregate budgets.
+- `any` activates exactly one complete child branch. BRACE encodes each
+  candidate, evaluates its full requirement tree, discards failing candidates,
+  and chooses the smallest valid stream.
+
+The selected plan is written to `recommendation_plan` in the JSON header.
+Diagnostics are written to `recommendation_checks` and are evaluated after
+repairs against the actual decoded field.
+
+Maximum pointwise absolute and relative requirements compile directly to
+per-element tolerances. Range-relative requirements resolve the finite source
+range first. Quadratic requirements use the configured parabolic tolerance
+curve; quadratic streams may use a fixed 256-element block step table so the
+decoder applies the same local step.
+
+Mean absolute and mean relative requirements are global budgets. The initial
+quantization may use a relaxed budget, then exact repairs are selected from
+the largest residual contributors until the aggregate condition passes. If an
+`all` branch also contains a pointwise requirement, that pointwise requirement
+still limits individual values.
+
+Data limits and isovalues compile to exact per-element boundaries and use
+repairs rather than clipping decoded values. Missing-value requirements are
+handled by the lossless mask/sentinel path. Lossless requirements use a
+separate typed-byte stream and preserve signed zero, infinities, and NaN
+payload bits.
+
+## 7. Container and outer compression
 
 The **BRCE** format, short for **BRACE Container Encoding**, stores:
 
@@ -187,9 +223,16 @@ flags `0x0002` and `0x0004` represent mask-only and residual-only compression.
 The container ends with CRC-32 over all preceding bytes, and BRCE v3 rejects
 other container versions.
 
+Recommendation metadata carries a schema version. Decode rejects unknown
+schema versions, incompatible mode/strategy combinations, unknown container
+flags, malformed mask partitions, entropy length or trailing-byte errors, and
+repair indices outside the valid-value list.
+
 ## Complexity
 
 The scan is `O(T*H*W)` time and stores a reconstructed field of the
 same grid footprint. Entropy coding is linear in the number of valid symbols,
-with bounded per-block tables. No training, model file, GPU, network, or
-runtime data download is required.
+with bounded per-block tables. A plan with `k` viable `any` candidates may
+encode up to `k` candidate streams before selecting the smallest one; a plan
+without `any` retains the normal single-stream cost. No training, model file,
+GPU, network, or runtime data download is required.

@@ -63,6 +63,18 @@ Two-dimensional inputs are represented internally as one time slice.
 - **Verify-and-repair:** the encoder simulates the decoder, checks the actual
   reconstructed values, and records exact repairs in the configured dtype for
   any positions that exceed the effective bound.
+- **Recommendation-aware strategies:** typed recommendation trees preserve
+  `all` as conjunction and `any` as disjunction. For an `any` node, BRACE
+  encodes each complete candidate branch, discards candidates whose full
+  diagnostics fail, and keeps the smallest valid stream. The selected branch,
+  strategy, and diagnostics are stored in the header.
+- **Aggregate requirements:** mean absolute, mean relative, and mean
+  range-relative requirements use aggregate error budgets. Pointwise children
+  in an `all` tree remain active and are intersected with other per-element
+  policies.
+- **Exact-constraint policies:** data limits and isovalues compile to
+  per-element tolerances and exact repairs. Missing-value requirements bind the
+  configured sentinel. Lossless requirements use a separate typed-byte path.
 - **Self-describing integrity-checked container:** the BRCE format (BRACE
   Container Encoding) records model metadata, payload lengths, compression
   flags, and a CRC-32 checksum. Its four-byte wire magic is `BRCE`, and the
@@ -145,13 +157,20 @@ codec = BraceCodec.from_recommendation(
 )
 ```
 
-`recommend_error_bound("cc")` returns the selected mode and value as an
-`ErrorBoundRecommendation`. Range-relative and quadratic bounds are resolved
-from source data and enforced conservatively as absolute bounds. Data limits
-and isovalues tighten per-element tolerances, missing-value recommendations
-bind the exact sentinel mask, and quadratic recommendations may carry
-deterministic block-local quantization steps. Lossless recommendations use a
-byte-shuffled typed-byte stream that preserves signed zero and NaN payloads.
+`recommend_error_bound("cc")` returns the static recommendation mode and value
+as an `ErrorBoundRecommendation`. The codec factory retains the complete
+typed plan. At encode time, range-relative bounds are resolved from the input
+range, quadratic bounds may use deterministic block-local quantization steps,
+and `any` alternatives are compared by actual encoded size. Data limits and
+isovalues tighten per-element tolerances, missing-value recommendations bind
+the exact sentinel mask, and lossless recommendations use a byte-shuffled
+typed-byte stream that preserves signed zero and NaN payloads.
+
+The encoded header contains `recommendation_plan` and
+`recommendation_checks`. Each check includes its kind, pass/fail result,
+metric, limit, violation count, and nested child checks. The benchmark treats
+these full diagnostics as authoritative; a static scalar recommendation is
+reported separately when it does not describe the selected branch.
 
 For recommendation plans that only specify exact constraints, provide an
 explicit `error_bound` to control the lossy base strategy for values not
@@ -185,6 +204,11 @@ name; for example, `cc` uses a 1% pointwise-relative bound while `t` uses a
 0.05 pointwise-absolute bound. The output JSON includes the selected
 requirement tree, strategy, repair count, and full requirement diagnostics.
 
+The current repository input is
+`data/era5_pressure_20260715T1200_4levels.nc`. The recommendation benchmark
+fails if any selected requirement tree fails after decoding and reports the
+aggregate compression ratio.
+
 To disable the final lossless Zstandard pass explicitly:
 
 ```python
@@ -205,7 +229,7 @@ float64 output buffer. Existing float32 streams remain the default format.
 ## Run tests
 
 ```bash
-PYTHONPATH=. pytest tests -q
+PYTHONPATH=src pytest tests -q
 ```
 
 Use `tests/unit`, `tests/contract`, or `tests/integration` for focused runs.

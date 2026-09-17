@@ -40,3 +40,27 @@ matching symbols it provides.
 These values are benchmark results, not compatibility guarantees. Hardware,
 Python version, optional extension availability, and dependency versions can
 change timing and a small amount of payload size.
+
+## Typed Recommendation Benchmark
+
+The repository also contains
+`data/era5_pressure_20260715T1200_4levels.nc`, a four-level ERA5 pressure
+dataset. The recommendation benchmark was run on 2026-09-17 with:
+
+```bash
+PYTHONPATH=src python scripts/compress_era5_with_recommendations.py \
+   --input data/era5_pressure_20260715T1200_4levels.nc \
+   --output data/era5_pressure_recommendation_example.json
+```
+
+All 16 variables passed their selected full recommendation trees after
+decoding. The aggregate compression ratio was **25.709x**. The output records
+the selected branch, strategy, repair count, and nested requirement
+diagnostics for each variable. For `any` plans, the reported stream is the
+smallest valid candidate after full encode and verification.
+
+The benchmark also reports `scalar_reference_violations`. These are retained
+for comparison with the static `recommend_error_bound()` result, but they are
+not failures when the selected plan is range-relative or a different
+data-dependent `any` branch. `all_requirements_passed` and the nested
+`recommendation_checks` are authoritative.

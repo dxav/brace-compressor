@@ -11,7 +11,8 @@ it has no runtime model or external model weights.
 
 ```mermaid
 flowchart TB
-  A[float32 or float64 field] --> B[extract missing mask]
+  A[float32 or float64 field] --> R[plan recommendation candidates]
+  R --> B[extract missing mask]
   B --> C[scan: reconstructed neighbors]
   C --> D[quantize residuals]
   D --> E[lossless entropy coder]
@@ -19,6 +20,7 @@ flowchart TB
   B --> G[lossless mask payload]
   F --> H[container with CRC]
   G --> H
+  H --> S[select smallest valid any candidate]
 ```
 
 The scan visits `(time, latitude, longitude)` in a fixed order. Each valid
@@ -53,6 +55,17 @@ stores zero and sign masks alongside the missing mask and verifies the
 pointwise condition `abs(decoded - original) <= error_bound * abs(original)`
 for every nonzero valid value. Absolute mode remains the default.
 
+Recommendation-created codecs retain a canonical requirement tree. `all`
+branches activate all children; `any` branches are expanded into complete
+candidates. Each candidate is encoded and checked against its full nested
+diagnostics. Failing candidates are discarded and the smallest valid container
+is returned. The selected branch and strategy remain in the winning header.
+
+Mean requirements use aggregate budgets with exact repairs. Pointwise children
+inside `all` remain active. Quadratic policies can provide a deterministic
+256-element local step table, while lossless plans use a byte-shuffled typed
+payload before optional Zstandard compression.
+
 The encoded header records the normalized shape, dtype, missing-value policy,
 requested and effective error bounds, quantization step, origin, valid and
 repaired counts, codec version, and payload/error metrics. `BraceCodec.get_config()`
@@ -60,12 +73,11 @@ also exposes the public codec id, shape, bound, missing value, dtype, and
 outer-compression setting; the configuration is JSON serializable and can be
 restored with `BraceCodec.from_config()`.
 
-Recommendation metadata additionally records the source version and marker
-query, canonical requirement tree, selected `any` branch, schema version,
-strategy, and final diagnostics. Lossless streams identify their byte-shuffle
-transform; quadratic streams may identify a fixed block size and local step
-table. Decoding rejects unknown schema versions, incompatible strategies,
-malformed masks and entropy sections, and out-of-range repairs before scanning.
+Recommendation headers include `recommendation_schema_version`, source
+recommendation version, marker query, complete requirements, selected tree,
+strategy, and `recommendation_checks`. Decode validates schema and strategy
+compatibility, mask partition lengths, entropy lengths/trailing bytes, and
+repair index ranges before scanning.
 
 ## Components
 
@@ -74,6 +86,8 @@ malformed masks and entropy sections, and out-of-range repairs before scanning.
 - `quant.py`: bound-derived residual lattice.
 - `model/entropy.py`: lossless symbol coding.
 - `verify.py`: post-encode bound verification and repair.
+- `recommendations.py`: typed recommendation adapter, canonical plan tree, and
+  candidate branch expansion.
 - `container.py`: BRCE v3 framing, per-payload optional outer compression, and CRC.
 - `rust/brace_scan/src/scan.rs`: optional reconstructed-neighbor scan for
   float32 and float64, selected automatically when its compiled extension is
