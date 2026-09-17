@@ -64,6 +64,20 @@ def test_encode_decode_buffer_contract(codec_factory, smooth_field):
     np.testing.assert_array_equal(ret, dec)
 
 
+def test_codec_records_non_serialized_stage_timings(codec_factory, smooth_field):
+    field, _ = smooth_field
+    codec = codec_factory()
+    encoded = codec.encode(field)
+    encode_timings = codec.last_timings.copy()
+    codec.decode(encoded)
+    decode_timings = codec.last_timings
+
+    assert encode_timings["encode_total_s"] >= encode_timings["encode_entropy_s"]
+    assert decode_timings["decode_total_s"] >= decode_timings["decode_entropy_s"]
+    assert encode_timings["encode_scan_s"] >= 0.0
+    assert decode_timings["decode_scan_s"] >= 0.0
+
+
 def test_two_dimensional_slice_roundtrip():
     field = np.array([[1.0, np.nan], [2.0, 3.0]], dtype=np.float32)
     codec = BraceCodec(shape=field.shape, error_bound=0.05)

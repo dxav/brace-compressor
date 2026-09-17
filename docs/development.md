@@ -96,7 +96,9 @@ Bound sweep:
 
 The benchmark independently checks maximum valid-value error, mask identity,
 RMSE, timing, container metrics, and compression ratio. `--json` emits data
-for automation.
+for automation, including `stage_timings` for mask handling, scan, verification,
+entropy coding, container work, and decode restoration. The same timing data is
+available in memory as `codec.last_timings` after each `encode` or `decode`.
 
 ## Public API
 

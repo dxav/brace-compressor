@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import struct
+import time
 from typing import Any
 
 import numpy as np
@@ -80,6 +81,7 @@ class BraceCodec(Codec):
         if self.dtype not in {np.dtype("float32"), np.dtype("float64")}:
             raise ValueError(f"dtype must be 'float32' or 'float64'; got {dtype!r}")
         self.outer_compress = bool(outer_compress)
+        self.last_timings: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # Configuration contract (numcodecs.Codec)
@@ -142,32 +144,41 @@ class BraceCodec(Codec):
     # Encode / decode
     # ------------------------------------------------------------------
     def encode(self, buf) -> bytes:
+        encode_start = time.perf_counter()
         field = self._as_field(buf)
+        stage_start = time.perf_counter()
         mask = extract_mask(field, self.missing_value, dtype=self.dtype)
         valid_values = field[~mask].astype(self.dtype)
         n_valid = int(valid_values.size)
+        mask_time = time.perf_counter() - stage_start
 
         bound = self.error_bound
         effective_bound = max(bound, float(np.finfo(self.dtype).eps))
         step = derive_step(bound, dtype=self.dtype)
         prior = np.full(self.shape, 32.0, dtype=self.dtype)
+        stage_start = time.perf_counter()
         symbols, recon_rows, origin = self._causal_scan_encode(
             field, mask, prior, step
         )
+        scan_time = time.perf_counter() - stage_start
         # --- Verify-and-repair: compare against the effective bound -------
         grid3d = recon_rows.reshape(self.shape)
         decoded_valid = grid3d[~mask]
+        stage_start = time.perf_counter()
         repair_map, _, max_abs_error, _ = verify_and_repair(
             valid_values, decoded_valid, effective_bound, dtype=self.dtype
         )
+        verify_time = time.perf_counter() - stage_start
         repair_positions, repair_values = repair_map.positions, repair_map.values
         # --- Entropy coding (bit-exact; per-block mode selection) ----------
+        stage_start = time.perf_counter()
         encoded_syms = _entropy_encode(symbols)
         value_payload = (
             struct.pack("<Q", len(encoded_syms))
             + encoded_syms
             + pack_repairs(repair_positions, repair_values, dtype=self.dtype)
         )
+        entropy_time = time.perf_counter() - stage_start
         mode = _MODE_QUANTIZED
 
         # --- Mask + container -------------------------------------------
@@ -193,15 +204,26 @@ class BraceCodec(Codec):
             },
             "codec_version": CODEC_VERSION,
         }
-        return write_container(
+        stage_start = time.perf_counter()
+        encoded = write_container(
             header_extra=header_extra,
             mask_payload=mask_payload,
             residual_payload=value_payload,
             model_version=MODEL_VERSION,
             outer_compress=self.outer_compress,
         )
+        self.last_timings = {
+            "encode_mask_s": mask_time,
+            "encode_scan_s": scan_time,
+            "encode_verify_s": verify_time,
+            "encode_entropy_s": entropy_time,
+            "encode_container_s": time.perf_counter() - stage_start,
+            "encode_total_s": time.perf_counter() - encode_start,
+        }
+        return encoded
 
     def decode(self, buf, out=None):
+        decode_start = time.perf_counter()
         if out is not None:
             out = np.asarray(out)
             expected = int(np.prod(self.shape)) * self.dtype.itemsize
@@ -213,10 +235,12 @@ class BraceCodec(Codec):
             if not out.flags["C_CONTIGUOUS"] or out.dtype != self.dtype:
                 raise ValueError(f"out buffer must be C-contiguous {self.dtype.name}")
 
+        stage_start = time.perf_counter()
         try:
             c = read_container(buf)
         except ContainerError:
             raise
+        container_time = time.perf_counter() - stage_start
         if c.model_version != MODEL_VERSION:
             raise ValueError(
                 f"unsupported scan model version {c.model_version}; "
@@ -240,20 +264,25 @@ class BraceCodec(Codec):
         missing_value = h["missing_value"]
         sentinel = float("nan") if missing_value == "nan" else float(missing_value)
 
+        stage_start = time.perf_counter()
         mask = unpack_mask(
             c.mask_payload, int(np.prod(self.shape))
         ).reshape(self.shape)
+        mask_time = time.perf_counter() - stage_start
 
         payload = c.residual_payload
         if len(payload) < 8:
             raise ValueError("residual payload too short")
         (ent_len,) = struct.unpack_from("<Q", payload, 0)
+        stage_start = time.perf_counter()
         symbols = decode_symbols(payload[8 : 8 + ent_len], n_valid)
         repair_positions, repair_values, _ = unpack_repairs(
             payload, 8 + ent_len, dtype=self.dtype
         )
+        entropy_time = time.perf_counter() - stage_start
         # --- Causal scan (identical walk to encode) ----------------------
         prior = np.full(self.shape, 32.0, dtype=self.dtype)
+        stage_start = time.perf_counter()
         recon_rows = self._causal_scan_decode(
             prior,
             mask,
@@ -262,6 +291,7 @@ class BraceCodec(Codec):
             origin,
             use_rust=self.dtype in {np.dtype("float32"), np.dtype("float64")},
         )
+        scan_time = time.perf_counter() - stage_start
         decoded_valid = recon_rows.reshape(self.shape)[~mask]
         if repair_positions.size:
             decoded_valid[repair_positions] = repair_values
@@ -269,9 +299,19 @@ class BraceCodec(Codec):
         field = np.empty(self.shape, dtype=self.dtype)
         if n_valid:
             field[~mask] = decoded_valid
+        stage_start = time.perf_counter()
         field = apply_mask(
             decoded=field, mask=mask, missing_value=sentinel, dtype=self.dtype
         )
+        restore_time = time.perf_counter() - stage_start
+        self.last_timings = {
+            "decode_container_s": container_time,
+            "decode_mask_s": mask_time,
+            "decode_entropy_s": entropy_time,
+            "decode_scan_s": scan_time,
+            "decode_restore_s": restore_time,
+            "decode_total_s": time.perf_counter() - decode_start,
+        }
 
         if out is not None:
             out[...] = field.reshape(out.shape)

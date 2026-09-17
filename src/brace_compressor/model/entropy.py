@@ -327,7 +327,13 @@ def ctx_rans_decode(
     out = np.empty(n, dtype=np.int64)
     prev = 0
     for i in range(n):
-        c = _ctx_of(prev)
+        previous_magnitude = abs(prev)
+        if previous_magnitude <= _CTX_BUCKETS[0]:
+            c = 0
+        elif previous_magnitude <= _CTX_BUCKETS[1]:
+            c = 1
+        else:
+            c = 2
         slot = x & (_RANS_M - 1)
         s = luts_py[c][slot]
         out[i] = s + min_symbol

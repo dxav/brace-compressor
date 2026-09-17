@@ -144,10 +144,12 @@ def run_roundtrip(
     t0 = time.perf_counter()
     encoded = codec.encode(field)
     t_enc = time.perf_counter() - t0
+    encode_timings = dict(codec.last_timings)
 
     t0 = time.perf_counter()
     decoded = codec.decode(encoded)
     t_dec = time.perf_counter() - t0
+    decode_timings = dict(codec.last_timings)
 
     # --- Verification statistics (independent of the codec's own claims) --
     orig_valid = ~np.isnan(field)
@@ -191,6 +193,7 @@ def run_roundtrip(
         "mask_sentinel_ok": mask_sentinel_ok,
         "encode_s": t_enc,
         "decode_s": t_dec,
+        "stage_timings": {**encode_timings, **decode_timings},
         "throughput_mbs": (orig_size / 1e6) / t_enc if t_enc > 0 else float("nan"),
         "header_mode": header.get("mode"),
         "header_quant_step": header.get("quant_step"),
@@ -252,6 +255,14 @@ def print_report(stats: dict) -> None:
     print(" Timing")
     print(f"   encode {stats['encode_s']:.2f} s   decode {stats['decode_s']:.2f} s")
     print(f"   throughput {stats['throughput_mbs']:.3f} MB/s (encode)")
+    timings = stats["stage_timings"]
+    print(
+        "   stages "
+        f"enc scan {timings.get('encode_scan_s', 0.0):.2f} s, "
+        f"entropy {timings.get('encode_entropy_s', 0.0):.2f} s, "
+        f"dec scan {timings.get('decode_scan_s', 0.0):.2f} s, "
+        f"entropy {timings.get('decode_entropy_s', 0.0):.2f} s"
+    )
 
     m = stats["container_metrics"]
     if m:
