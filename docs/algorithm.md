@@ -138,8 +138,7 @@ The **BRCE** format, short for **BRACE Container Encoding**, stores:
 5. CRC-32 over all preceding bytes.
 
 The on-disk magic is the four-byte ASCII value `BRCE`. Container version 3
-marks this format change; streams using the former `HWPC` magic are not
-accepted by the current reader.
+identifies this format.
 
 The optional outer pass is Zstandard and lossless. It is enabled by default by
 `BraceCodec`; pass `outer_compress=False` to skip it. The CLI benchmark exposes
