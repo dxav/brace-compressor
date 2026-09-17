@@ -1,6 +1,6 @@
 # BRACE
 
-[![CI](https://github.com/eobytes/brace-compressor/actions/workflows/ci.yml/badge.svg)](https://github.com/eobytes/brace-compressor/actions/workflows/ci.yml)
+[![CI](https://github.com/dxav/brace-compressor/actions/workflows/ci.yml/badge.svg)](https://github.com/dxav/brace-compressor/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/optional%20accelerator-Rust-orange.svg?logo=rust)](rust/brace_scan)

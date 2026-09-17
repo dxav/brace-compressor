@@ -5,6 +5,8 @@ type: software
 version: 0.1.0
 date-released: 2026-09-16
 license: MIT
-repository-code: "https://github.com/eobytes/brace-compressor"
+repository-code: "https://github.com/dxav/brace-compressor"
 authors:
-  - name: "EObytes"
+  - family-names: "Delaunay"
+    given-names: "Xavier"
+    affiliation: "EObytes"
