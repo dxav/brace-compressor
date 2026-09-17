@@ -481,6 +481,7 @@ def test_any_recommendation_uses_data_scale_for_encoding_branch():
         ),
     )
 
+    assert len(codec.recommendation_plan.candidate_plans_for_data(original)) == 2
     encoded = codec.encode(original)
     selected = read_container(encoded).header_extra["recommendation_plan"]["selected"]
 

@@ -276,6 +276,58 @@ class BraceCodec(Codec):
     def encode(self, buf) -> bytes:
         encode_start = time.perf_counter()
         field = self._as_field(buf)
+        if (
+            self.recommendation_plan is not None
+            and not getattr(self, "_candidate_encoding", False)
+            and any(node.kind == "any" for node in self.recommendation_plan.requirements)
+        ):
+            candidates = self.recommendation_plan.candidate_plans_for_data(field)
+            valid_streams = []
+            for candidate_plan in candidates:
+                candidate = type(self)(
+                    shape=self.shape,
+                    error_bound=self.error_bound,
+                    missing_value=self.missing_value,
+                    dtype=self.dtype,
+                    outer_compress=self.outer_compress,
+                    error_bound_mode=self.error_bound_mode,
+                )
+                candidate.recommendation_plan = candidate_plan
+                candidate._candidate_encoding = True
+                candidate._recommendation_explicit_bound = getattr(
+                    self, "_recommendation_explicit_bound", False
+                )
+                candidate._recommendation_explicit_mode = getattr(
+                    self, "_recommendation_explicit_mode", False
+                )
+                if not candidate._recommendation_explicit_bound:
+                    try:
+                        bound = candidate_plan.pointwise_error_bound()
+                        candidate.error_bound = bound.value
+                        if not candidate._recommendation_explicit_mode:
+                            candidate.error_bound_mode = bound.mode
+                    except KeyError:
+                        pass
+                stream = candidate.encode(field)
+                checks = read_container(stream).header_extra.get(
+                    "recommendation_checks", []
+                )
+                if all(bool(check.get("passed", False)) for check in checks):
+                    valid_streams.append((len(stream), candidate_plan, stream))
+            if not valid_streams:
+                raise ValueError("no recommendation branch produced a valid stream")
+            _, self.recommendation_plan, encoded = min(
+                valid_streams, key=lambda item: item[0]
+            )
+            if not getattr(self, "_recommendation_explicit_bound", False):
+                try:
+                    selected_bound = self.recommendation_plan.pointwise_error_bound()
+                    self.error_bound = selected_bound.value
+                    if not getattr(self, "_recommendation_explicit_mode", False):
+                        self.error_bound_mode = selected_bound.mode
+                except KeyError:
+                    pass
+            return encoded
         if self.recommendation_plan is not None and any(
             node.kind == "any" for node in self.recommendation_plan.requirements
         ):

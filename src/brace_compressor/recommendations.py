@@ -94,6 +94,31 @@ class RecommendationPlan:
             ),
         )
 
+    def candidate_plans_for_data(self, data) -> tuple["RecommendationPlan", ...]:
+        """Enumerate complete, data-aware candidate plans for ``any`` nodes."""
+
+        import numpy as np
+
+        values = np.asarray(data)
+        trees = [tuple([node]) for node in self.requirements]
+        for index, node in enumerate(self.requirements):
+            choices = _expand_node(node, values)
+            trees = [
+                tree[:index] + (choice,) + tree[index + 1 :]
+                for tree in trees
+                for choice in choices
+            ]
+        return tuple(
+            RecommendationPlan(
+                variable=self.variable,
+                markers=self.markers,
+                recommendations_version=self.recommendations_version,
+                requirements=self.requirements,
+                selected_tree=tree,
+            )
+            for tree in trees
+        )
+
     def pointwise_error_bound(self) -> ErrorBoundRecommendation:
         """Return a conservative scalar bound for the current codec.
 
@@ -303,6 +328,23 @@ def _select_node(node: RequirementNode, data=None) -> RequirementNode:
             min(node.children, key=lambda child: _node_score(child, data)), data
         )
     return node
+
+
+def _expand_node(node: RequirementNode, data) -> tuple[RequirementNode, ...]:
+    import itertools
+
+    if node.kind == "any":
+        choices = []
+        for child in node.children:
+            choices.extend(_expand_node(child, data))
+        return tuple(choices)
+    if node.kind == "all":
+        children = [tuple(_expand_node(child, data)) for child in node.children]
+        return tuple(
+            RequirementNode(kind="all", children=tuple(choice))
+            for choice in itertools.product(*children)
+        )
+    return (node,)
 
 
 def _node_score(node: RequirementNode, data=None):
