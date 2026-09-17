@@ -88,6 +88,11 @@ chooses the smallest lossless representation among:
   frequency tables selected by the previous symbol magnitude (`<=1`, `<=8`,
   or larger).
 
+When the compiled `brace_scan` extension is available, both rANS variants are
+implemented in Rust and selected automatically by `model/entropy.py`. The
+Python implementations remain the reference fallback, so installing the
+extension changes execution time but not the payload format or bitstream.
+
 Zigzag maps `0, -1, 1, -2, 2, ...` to unsigned `0, 1, 2, 3, 4, ...`.
 Every entropy mode is bit-exact: decoding reproduces the same symbols. This
 is essential because the verifier must assess the exact decoder result.

@@ -30,9 +30,12 @@ Compression has four major contributors:
 4. Zstandard is attempted independently on the mask and residual payloads and is
    retained only when it reduces size.
 
-The optional Rust extension accelerates the linear scan. Without it,
-the Python implementation has the same algorithm and stream semantics but is
-slower for large fields.
+The optional Rust extension accelerates both major CPU-heavy stages: the
+reconstructed-neighbor scan and the RANGE/CTX rANS loops. Without it, the
+Python implementation has the same algorithm, stream format, and semantics
+but is slower for large fields. Entropy acceleration is selected independently
+of scan acceleration, so a partial or older extension can still use whichever
+matching symbols it provides.
 
 These values are benchmark results, not compatibility guarantees. Hardware,
 Python version, optional extension availability, and dependency versions can

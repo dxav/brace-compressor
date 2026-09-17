@@ -50,5 +50,10 @@ configured sentinel is restored exactly.
 - `model/entropy.py`: lossless symbol coding.
 - `verify.py`: post-encode bound verification and repair.
 - `container.py`: versioned framing, optional outer compression, and CRC.
-- `rust/brace_scan`: optional accelerated scan, selected automatically when
-  its compiled extension is importable.
+- `rust/brace_scan/src/scan.rs`: optional reconstructed-neighbor scan for
+  float32 and float64, selected automatically when its compiled extension is
+  importable.
+- `rust/brace_scan/src/rans.rs`: optional static RANGE and context-adaptive
+  CTX rANS codecs, selected automatically by the entropy module.
+- `rust/brace_scan/src/lib.rs`: Python extension entry point that registers
+  the scan and entropy bindings.

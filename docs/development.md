@@ -30,13 +30,19 @@ cargo build --manifest-path rust/brace_scan/Cargo.toml --release
 python -m pip install -e .
 ```
 
-The extension exports `causal_scan_encode` and `causal_scan_decode` for
-float32, plus `causal_scan_encode_f64` and `causal_scan_decode_f64` for
-float64. The public codec selects these functions automatically based on its
-configured dtype; there is no separate runtime activation setting. If the
-extension is absent, or an older build lacks the float64 symbols, the codec
-falls back to Python. Tests compare behavior through the public codec, with
-the Python implementation remaining the reference implementation.
+The extension is organized by responsibility:
+
+- `rust/brace_scan/src/scan.rs` contains the float32 and float64 causal scan;
+- `rust/brace_scan/src/rans.rs` contains static RANGE and context-adaptive CTX
+  rANS;
+- `rust/brace_scan/src/lib.rs` registers both groups with Python.
+
+The public codec selects scan and entropy functions automatically when the
+matching symbols are importable; there is no separate runtime activation
+setting. If the extension is absent or a symbol is unavailable, the relevant
+Python implementation remains the correctness fallback. Rust and Python use
+the same stream format, so the extension changes execution time but not
+compatibility.
 
 ## Tests
 
@@ -49,7 +55,7 @@ PYTHONPATH=. pytest tests/integration -q
 ```
 
 `PYTHONPATH=.` avoids a name collision with an unrelated installed package
-called `tests` on some environments. The expected current result is 69 tests
+called `tests` on some environments. The expected current result is 74 tests
 when running the full suite.
 
 The test groups are:
