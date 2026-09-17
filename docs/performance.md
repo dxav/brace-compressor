@@ -1,6 +1,6 @@
 # Performance Report
 
-Measurements were taken on 2026-09-16 with Python 3.12, the downloaded
+Measurements were taken on 2026-09-17 with Python 3.13, the downloaded
 `data/HOAPS_2020-08_6-hourly.nc` sample, and the repository benchmark:
 
 ```bash
@@ -8,14 +8,14 @@ Measurements were taken on 2026-09-16 with Python 3.12, the downloaded
    --input data/HOAPS_2020-08_6-hourly.nc --variable wvpa --sweep 0.01 0.05 0.2
 ```
 
-The sample has shape `(28, 320, 720)`, 6,451,200 cells, 68.7% missing
-values, and an uncompressed size of 24.61 MiB.
+The sample has shape `(124, 320, 720)`, 28,569,600 cells, 67.4% missing
+values, and an uncompressed size of 108.98 MB.
 
 | Bound | Compressed | Compression ratio | Reduction | Max error | Encode | Decode |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0.01 | 1.93 MiB | **12.75x** | 92.2% | 0.01000 | 1.77 s | 2.61 s |
-| 0.05 | 1.33 MiB | **18.53x** | 94.6% | 0.05000 | 1.45 s | 1.47 s |
-| 0.20 | 877 KiB | **28.74x** | 96.5% | 0.20000 | 0.79 s | 1.10 s |
+| 0.01 | 8.90 MB | **12.25x** | 91.8% | 0.01000 | 2.86 s | 1.95 s |
+| 0.05 | 6.13 MB | **17.78x** | 94.4% | 0.05000 | 2.15 s | 1.03 s |
+| 0.20 | 3.95 MB | **27.60x** | 96.4% | 0.20000 | 1.63 s | 1.04 s |
 
 All three runs reported zero bound violations and an identical missing mask.
 
